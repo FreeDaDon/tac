@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import json
 import os
+import sys
 import urllib.request
 from typing import Any
 
@@ -21,8 +22,25 @@ def emit(adw_id: str, event_type: str, phase: str = "", message: str = "", **dat
             fh.write(event.model_dump_json() + "\n")
     except Exception:  # noqa: BLE001, S110 - telemetry is best effort by design
         pass
+    _echo(event)
     _push(event)
     return event
+
+
+_ECHO_TYPES = {"phase_start", "phase_end", "agent_call", "repair", "error", "budget", "pipeline", "gate"}
+
+
+def _echo(event: TelemetryEvent) -> None:
+    """Human-readable progress on stderr (silence with TAC_QUIET=1)."""
+    if event.event_type not in _ECHO_TYPES or os.getenv("TAC_QUIET") == "1":
+        return
+    extra = ""
+    if event.event_type == "agent_call":
+        extra = f" [{event.data.get('model', '')} ${event.data.get('cost_usd', 0) or 0:.4f}]"
+    elif event.event_type == "phase_end":
+        extra = f" ({event.data.get('status', '')}, {event.data.get('duration_s', '')}s)"
+    print(f"[{event.adw_id}] {event.event_type:<11} {event.phase:<9} {event.message}{extra}"[:300],
+          file=sys.stderr, flush=True)
 
 
 def _push(event: TelemetryEvent) -> None:

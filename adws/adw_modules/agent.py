@@ -93,6 +93,8 @@ class ClaudeRunner:
         mcp = Path(cwd) / ".mcp.json"
         if mcp.exists():
             cmd += ["--mcp-config", str(mcp)]
+        # the run's own artifact dir (inputs, screenshots) lives in the main checkout, outside the worktree
+        cmd += ["--add-dir", str(run_dir(request.adw_id))]
         if skip_permissions_allowed(request.working_dir, request.adw_id):
             cmd.append("--dangerously-skip-permissions")
         else:
@@ -207,7 +209,8 @@ def execute_template(request: AgentRequest, runner: Runner | None = None) -> Age
     (out_dir / "prompt.md").write_text(prompt)
 
     cache = PromptCache() if (request.allow_cache and PromptCache.enabled_for(request.slash_command)) else None
-    cache_key = PromptCache.key(request.slash_command, prompt, model, request.working_dir) if cache else ""
+    cache_key = (PromptCache.key(request.slash_command, prompt, model, request.working_dir, request.args,
+                                 runner=type(runner).__name__) if cache else "")
     if cache:
         hit = cache.get(cache_key)
         if hit:

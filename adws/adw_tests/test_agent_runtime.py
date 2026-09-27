@@ -159,3 +159,29 @@ def test_claude_runner_no_skip_permissions_outside_worktree(
     assert resp.success and resp.usage.cost_usd == 0.01
     argv = argv_file.read_text()
     assert "--dangerously-skip-permissions" not in argv and "acceptEdits" in argv
+
+
+def test_cache_key_tracks_file_content_and_runner(tac_root: Path, tmp_path: Path) -> None:
+    """Live-run regression: prompts carry file PATHS, so two issues at the same path shared a cache entry,
+    and mock answers were served to the real runner."""
+    issue = tmp_path / "issue.md"
+    issue.write_text("issue A")
+    k1 = PromptCache.key("/classify_issue", "Classify x", "haiku", None, [str(issue)], runner="ClaudeRunner")
+    issue.write_text("issue B")
+    k2 = PromptCache.key("/classify_issue", "Classify x", "haiku", None, [str(issue)], runner="ClaudeRunner")
+    k3 = PromptCache.key("/classify_issue", "Classify x", "haiku", None, [str(issue)], runner="MockRunner")
+    assert len({k1, k2, k3}) == 3
+
+
+def test_claude_runner_grants_run_dir(tac_root: Path, monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
+    """Live-run regression: agents in a worktree could not read their inputs in agent/runs/<id>/."""
+    argv_file = tmp_path / "argv.txt"
+    fake = tmp_path / "fake_claude.sh"
+    fake.write_text(f'#!/bin/sh\necho "$@" > {argv_file}\n'
+                    'echo \'{"type":"result","result":"ok","is_error":false}\'\n')
+    fake.chmod(0o755)
+    monkeypatch.setattr(agent, "CLAUDE_PATH", str(fake))
+    out = tmp_path / "o"
+    out.mkdir()
+    agent.ClaudeRunner().run(AgentRequest(adw_id="ab12cd34", agent_name="t", slash_command="/commit"), "hi", "haiku", out)
+    assert f"--add-dir {tac_root / 'agent' / 'runs' / 'ab12cd34'}" in argv_file.read_text()

@@ -53,6 +53,19 @@ def tree_hash(working_dir: str | None) -> str:
     return hashlib.sha256((head + diff).encode()).hexdigest()
 
 
+def _args_digest(args: list[str]) -> str:
+    h = hashlib.sha256()
+    for arg in args:
+        h.update(arg.encode())
+        try:
+            path = Path(arg)
+            if path.is_file():
+                h.update(path.read_bytes())
+        except (OSError, ValueError):
+            pass
+    return h.hexdigest()
+
+
 class PromptCache:
     def __init__(self, path: Path | None = None, ttl_s: int = DEFAULT_TTL_S) -> None:
         self.path = path or agent_dir() / "cache.db"
@@ -72,8 +85,12 @@ class PromptCache:
         return env_flag("TAC_CACHE_ENABLED", True) and slash_command in CACHEABLE_COMMANDS
 
     @staticmethod
-    def key(slash_command: str, prompt: str, model: str, working_dir: str | None) -> str:
-        material = "\x1f".join([slash_command.lower(), model, normalize_prompt(prompt), tree_hash(working_dir)])
+    def key(slash_command: str, prompt: str, model: str, working_dir: str | None,
+            args: list[str] | None = None, runner: str = "") -> str:
+        """Prompts pass inputs by file path, so the key hashes the CONTENT of file args too;
+        otherwise two different issues at the same path pattern would share an answer."""
+        material = "\x1f".join([runner, slash_command.lower(), model, normalize_prompt(prompt),
+                                 tree_hash(working_dir), _args_digest(args or [])])
         return hashlib.sha256(material.encode()).hexdigest()
 
     def get(self, key: str) -> AgentResponse | None:
