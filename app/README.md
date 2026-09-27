@@ -61,6 +61,7 @@ cd app/client && npm install && npx tsc --noEmit && npm run build
 | GET | `/api/worktrees` | `trees/<adw_id>/.ports.env` with a live listening check per port |
 | GET | `/api/lessons` | `agent/lessons/*.md` frontmatter (`name`, `description`, `tags`) and body |
 | GET | `/api/cache` | `agent/cache.db` entries and hit counts (read-only), per command |
+| GET | `/api/version` | `{name, version}` from pyproject.toml, read once at startup and cached |
 | GET | `/api/docs` | OpenAPI UI |
 
 Corrupt or partial files never break an endpoint: a malformed `state.json` shows up as a run with an `error` field, bad `events.jsonl` lines are skipped, and large event files are tailed (last 5 MB).

@@ -1,8 +1,9 @@
 import "./style.css";
 import { api, authToken } from "./api";
 import { h } from "./dom";
-import type { Budget, CacheStats, Health, Kpis, Lesson, RunDetail, RunSummary, Worktree } from "./types";
+import type { Budget, CacheStats, Health, Kpis, Lesson, RunDetail, RunSummary, Version, Worktree } from "./types";
 import { renderDrawer } from "./views/drawer";
+import { renderFooter } from "./views/footer";
 import { renderHeader } from "./views/header";
 import { renderKpis } from "./views/kpis";
 import { renderLessons } from "./views/lessons";
@@ -26,11 +27,12 @@ interface AppState {
   selected: string | null;
   detail: RunDetail | null;
   detailError: string | null;
+  version: Version | null;
 }
 
 const state: AppState = {
   health: null, healthError: false, conn: "connecting", kpis: null, budget: null, cache: null,
-  runs: [], worktrees: [], lessons: [], selected: null, detail: null, detailError: null,
+  runs: [], worktrees: [], lessons: [], selected: null, detail: null, detailError: null, version: null,
 };
 
 const root = document.getElementById("app");
@@ -42,6 +44,7 @@ const slots = {
   runs: h("div"),
   side: h("div", { class: "side" }),
   drawer: h("div"),
+  footer: h("div"),
 };
 const timeline = new TimelineView();
 root.append(
@@ -53,6 +56,7 @@ root.append(
     h("div", { class: "grid" }, h("div", { class: "main-col" }, slots.runs, timeline.el), slots.side),
   ),
   slots.drawer,
+  slots.footer,
 );
 
 function renderAll(): void {
@@ -60,6 +64,7 @@ function renderAll(): void {
   slots.kpis.replaceChildren(renderKpis(state.kpis, state.budget, state.runs, state.cache));
   slots.runs.replaceChildren(renderRuns(state.runs, state.selected, selectRun));
   slots.side.replaceChildren(renderWorktrees(state.worktrees), renderLessons(state.lessons));
+  slots.footer.replaceChildren(renderFooter(state.version));
   renderDrawerSlot();
 }
 
@@ -153,6 +158,10 @@ const socket = new LiveSocket({
 renderAll();
 void refresh();
 socket.start();
+void settle(api.version()).then((v) => {
+  state.version = v;
+  slots.footer.replaceChildren(renderFooter(state.version));
+});
 window.setInterval(() => {
   if (document.visibilityState === "visible") void refresh();
 }, POLL_MS);
