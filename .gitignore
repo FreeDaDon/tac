@@ -22,3 +22,4 @@ logs/
 tasks.md
 !core/fixtures/**/*.log
 agent/hook_logs/
+agent_data/
