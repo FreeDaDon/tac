@@ -1,0 +1,26 @@
+name: ci
+on:
+  push:
+    branches: [main]
+  pull_request:
+permissions:
+  contents: read
+jobs:
+  checks:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+      - uses: astral-sh/setup-uv@v5
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - run: git config --global user.email ci@example.com && git config --global user.name ci
+      - run: uv sync
+      - run: uv run ruff check .
+      - run: uv run mypy adws core app/server
+      - run: uv run pytest -q
+        env:
+          TAC_AGENT_RUNNER: mock
+      - run: uv run python -m core.registry swe . --tool secret_scan --fail-on high
+      - run: cd app/client && npm ci && npx tsc --noEmit && npm run build

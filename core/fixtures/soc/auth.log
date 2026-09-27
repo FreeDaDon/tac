@@ -1,0 +1,27 @@
+Mar 10 08:00:01 web01 CRON[1101]: pam_unix(cron:session): session opened for user root by (uid=0)
+Mar 10 08:02:13 web01 sshd[1202]: Accepted publickey for deploy from 10.0.0.5 port 50522 ssh2: ED25519 SHA256:abc
+Mar 10 08:05:44 web01 sudo:    alice : TTY=pts/0 ; PWD=/home/alice ; USER=root ; COMMAND=/usr/bin/systemctl restart nginx
+Mar 10 08:10:02 web01 sshd[1250]: Failed password for alice from 10.0.0.12 port 50611 ssh2
+Mar 10 08:10:09 web01 sshd[1250]: Accepted password for alice from 10.0.0.12 port 50611 ssh2
+Mar 10 09:15:30 web01 sudo:    alice : TTY=pts/0 ; PWD=/home/alice ; USER=root ; COMMAND=/usr/bin/journalctl -u nginx
+Mar 10 10:20:11 web01 sudo:    alice : TTY=pts/1 ; PWD=/home/alice ; USER=root ; COMMAND=/usr/bin/systemctl status nginx
+Mar 10 13:55:01 web01 sshd[2001]: Failed password for root from 203.0.113.50 port 41022 ssh2
+Mar 10 13:55:04 web01 sshd[2001]: Failed password for root from 203.0.113.50 port 41022 ssh2
+Mar 10 13:55:08 web01 sshd[2003]: Failed password for root from 203.0.113.50 port 41030 ssh2
+Mar 10 13:55:12 web01 sshd[2003]: Failed password for root from 203.0.113.50 port 41030 ssh2
+Mar 10 13:55:19 web01 sshd[2005]: Failed password for invalid user admin from 203.0.113.50 port 41044 ssh2
+Mar 10 13:55:25 web01 sshd[2007]: Failed password for root from 203.0.113.50 port 41051 ssh2
+Mar 10 13:55:31 web01 sshd[2007]: Failed password for root from 203.0.113.50 port 41051 ssh2
+Mar 10 13:55:40 web01 sshd[2009]: Failed password for root from 203.0.113.50 port 41060 ssh2
+Mar 10 13:56:02 web01 sshd[2011]: Accepted password for root from 203.0.113.50 port 41077 ssh2
+Mar 10 13:56:03 web01 sshd[2011]: pam_unix(sshd:session): session opened for user root by (uid=0)
+Mar 10 14:30:00 web01 sshd[2100]: Invalid user oracle from 198.51.100.7 port 60001
+Mar 10 14:30:02 web01 sshd[2100]: Failed password for invalid user oracle from 198.51.100.7 port 60001 ssh2
+Mar 10 15:00:01 web01 sshd[2201]: Failed password for invalid user test from 192.0.2.99 port 33001 ssh2
+Mar 10 15:00:41 web01 sshd[2202]: Failed password for invalid user guest from 192.0.2.99 port 33002 ssh2
+Mar 10 15:01:20 web01 sshd[2203]: Failed password for invalid user ubuntu from 192.0.2.99 port 33003 ssh2
+Mar 10 15:02:05 web01 sshd[2204]: Failed password for alice from 192.0.2.99 port 33004 ssh2
+Mar 10 15:02:50 web01 sshd[2205]: Failed password for deploy from 192.0.2.99 port 33005 ssh2
+Mar 10 15:03:31 web01 sshd[2206]: Failed password for invalid user postgres from 192.0.2.99 port 33006 ssh2
+Mar 10 16:45:12 web01 sudo:      bob : TTY=pts/2 ; PWD=/home/bob ; USER=root ; COMMAND=/bin/bash
+Mar 10 17:00:01 web01 CRON[3001]: pam_unix(cron:session): session closed for user root

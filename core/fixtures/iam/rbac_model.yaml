@@ -1,0 +1,39 @@
+# Payments platform access model (fixture)
+roles:
+  viewer:
+    permissions: [reports:read]
+  payments_clerk:
+    permissions: [payments:create]
+    inherits: [viewer]
+  payments_approver:
+    permissions: [payments:approve]
+    inherits: [viewer]
+  finance_lead:
+    inherits: [payments_clerk, payments_approver]
+  platform_admin:
+    permissions: ["*"]
+  auditor:
+    permissions: [audit:read, reports:read]
+  legacy_ops:
+    permissions: [servers:restart]
+users:
+  alice:
+    roles: [finance_lead]
+    attributes: {department: finance}
+  bob:
+    roles: [payments_clerk]
+    attributes: {department: finance}
+  carol:
+    roles: [payments_approver]
+    attributes: {department: sales}
+  dan:
+    roles: [platform_admin]
+    attributes: {department: it}
+  erin:
+    roles: [auditor]
+    attributes: {department: audit}
+sod_rules:
+  - [payments:create, payments:approve]
+abac_policies:
+  - permission: payments:approve
+    require: {department: finance}

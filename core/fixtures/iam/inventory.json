@@ -1,0 +1,28 @@
+{
+  "as_of": "2025-06-30",
+  "account_id": "123456789012",
+  "users": [
+    {"name": "alice", "type": "human", "created": "2023-02-01", "last_login": "2025-06-28T09:12:00Z", "mfa_enabled": true,
+     "groups": ["developers"], "attached_policies": ["AdministratorAccess"],
+     "access_keys": [{"id": "AKIAEXAMPLEALICE0001", "created": "2025-05-01", "last_used": "2025-06-29T17:00:00Z", "status": "Active"}]},
+    {"name": "bob", "type": "human", "created": "2023-06-15", "last_login": "2025-06-20T08:00:00Z", "mfa_enabled": false,
+     "groups": ["admins"], "attached_policies": [], "access_keys": []},
+    {"name": "carol", "type": "human", "created": "2022-09-01", "last_login": "2025-01-10T12:00:00Z", "mfa_enabled": true,
+     "groups": ["analysts"], "attached_policies": ["ReadOnlyAccess"], "access_keys": []},
+    {"name": "dave", "type": "human", "created": "2025-03-01", "last_login": null, "mfa_enabled": false,
+     "groups": ["developers"], "attached_policies": [], "access_keys": []},
+    {"name": "eve", "type": "human", "created": "2025-06-20", "last_login": null, "mfa_enabled": true,
+     "groups": ["developers"], "attached_policies": [], "access_keys": []},
+    {"name": "frank", "type": "human", "created": "2021-01-10", "last_login": "2025-06-29T07:30:00Z", "mfa_enabled": true,
+     "groups": ["admins"], "attached_policies": [], "access_keys": []},
+    {"name": "gina", "type": "human", "created": "2021-03-10", "last_login": "2025-06-27T15:45:00Z", "mfa_enabled": true,
+     "groups": [], "attached_policies": ["arn:aws:iam::aws:policy/AdministratorAccess"], "access_keys": []},
+    {"name": "svc-ci", "type": "service", "created": "2024-11-01", "last_login": null, "mfa_enabled": false,
+     "groups": [], "attached_policies": ["ci-deploy"],
+     "access_keys": [{"id": "AKIAEXAMPLESVCCI0001", "created": "2024-11-01", "last_used": "2025-06-29T02:00:00Z", "status": "Active"}]},
+    {"name": "svc-legacy", "type": "service", "created": "2023-01-15", "last_login": null, "mfa_enabled": false,
+     "groups": [], "attached_policies": ["AdministratorAccess"],
+     "access_keys": [{"id": "AKIAEXAMPLELEGACY001", "created": "2024-01-15", "last_used": "2024-09-01T00:00:00Z", "status": "Active"},
+                     {"id": "AKIAEXAMPLELEGACY002", "created": "2023-01-15", "last_used": null, "status": "Inactive"}]}
+  ]
+}

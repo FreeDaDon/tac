@@ -1,0 +1,23 @@
+title: SSH Failed Password From External Source
+id: 5f1c7e9a-3b2d-4c8e-9a61-2d7f0b8e4c11
+status: experimental
+description: Failed SSH password authentication from outside the corporate network (brute-force precursor).
+author: tac-core fixtures
+logsource:
+  product: linux
+  service: sshd
+detection:
+  selection:
+    process.name: sshd
+    message|contains: 'Failed password'
+  filter_internal:
+    source.ip|startswith:
+      - '10.0.0.'
+      - '10.0.1.'
+  condition: selection and not filter_internal
+falsepositives:
+  - Users mistyping their password from home without the VPN
+level: medium
+tags:
+  - attack.credential_access
+  - attack.t1110.001

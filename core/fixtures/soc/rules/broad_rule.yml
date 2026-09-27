@@ -1,0 +1,11 @@
+title: Suspicious Shell Activity
+logsource:
+  product: linux
+detection:
+  selection_proc:
+    process.name|endswith: 'sh'
+  selection_cmd:
+    process.command_line|contains: 'a'
+  unused_selection:
+    user.name: root
+  condition: 1 of selection_*

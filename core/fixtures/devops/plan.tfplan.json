@@ -1,0 +1,103 @@
+{
+  "format_version": "1.2",
+  "terraform_version": "1.8.5",
+  "resource_drift": [
+    {
+      "address": "aws_security_group.app",
+      "mode": "managed",
+      "type": "aws_security_group",
+      "name": "app",
+      "change": {
+        "actions": ["update"],
+        "before": {
+          "name": "app",
+          "ingress": [{"from_port": 443, "to_port": 443, "protocol": "tcp", "cidr_blocks": ["10.0.0.0/16"]}],
+          "tags": {"env": "prod"}
+        },
+        "after": {
+          "name": "app",
+          "ingress": [{"from_port": 443, "to_port": 443, "protocol": "tcp", "cidr_blocks": ["0.0.0.0/0"]}],
+          "tags": {"env": "prod", "changed_by": "console"}
+        }
+      }
+    },
+    {
+      "address": "aws_instance.web",
+      "mode": "managed",
+      "type": "aws_instance",
+      "name": "web",
+      "change": {
+        "actions": ["update"],
+        "before": {"instance_type": "t3.small", "tags": {"env": "prod"}},
+        "after": {"instance_type": "t3.small", "tags": {"env": "prod", "owner": "ops"}}
+      }
+    }
+  ],
+  "resource_changes": [
+    {
+      "address": "aws_s3_bucket.logs",
+      "mode": "managed", "type": "aws_s3_bucket", "name": "logs",
+      "change": {"actions": ["create"], "before": null,
+                 "after": {"bucket": "acme-prod-logs", "acl": "private", "force_destroy": false}}
+    },
+    {
+      "address": "aws_instance.web",
+      "mode": "managed", "type": "aws_instance", "name": "web",
+      "change": {"actions": ["update"],
+                 "before": {"instance_type": "t3.small", "ami": "ami-0abc"},
+                 "after": {"instance_type": "t3.medium", "ami": "ami-0abc"}}
+    },
+    {
+      "address": "aws_db_instance.main",
+      "mode": "managed", "type": "aws_db_instance", "name": "main",
+      "action_reason": "replace_because_cannot_update",
+      "change": {"actions": ["delete", "create"],
+                 "before": {"identifier": "prod-db", "engine": "postgres", "storage_encrypted": true},
+                 "after": {"identifier": "prod-db-v2", "engine": "postgres", "storage_encrypted": false},
+                 "replace_paths": [["identifier"]]}
+    },
+    {
+      "address": "aws_security_group.bastion",
+      "mode": "managed", "type": "aws_security_group", "name": "bastion",
+      "change": {"actions": ["update"],
+                 "before": {"name": "bastion", "ingress": [
+                   {"from_port": 22, "to_port": 22, "protocol": "tcp", "cidr_blocks": ["10.0.0.0/16"], "ipv6_cidr_blocks": []}]},
+                 "after": {"name": "bastion", "ingress": [
+                   {"from_port": 22, "to_port": 22, "protocol": "tcp", "cidr_blocks": ["0.0.0.0/0"], "ipv6_cidr_blocks": []}]}}
+    },
+    {
+      "address": "aws_security_group.internal_db",
+      "mode": "managed", "type": "aws_security_group", "name": "internal_db",
+      "change": {"actions": ["create"], "before": null,
+                 "after": {"name": "internal-db", "ingress": [
+                   {"from_port": 5432, "to_port": 5432, "protocol": "tcp", "cidr_blocks": ["10.0.0.0/8"], "ipv6_cidr_blocks": []}]}}
+    },
+    {
+      "address": "aws_s3_bucket_acl.assets",
+      "mode": "managed", "type": "aws_s3_bucket_acl", "name": "assets",
+      "change": {"actions": ["create"], "before": null, "after": {"bucket": "acme-assets", "acl": "public-read"}}
+    },
+    {
+      "address": "aws_iam_role_policy.ci",
+      "mode": "managed", "type": "aws_iam_role_policy", "name": "ci",
+      "change": {"actions": ["create"], "before": null,
+                 "after": {"name": "ci-deploy", "role": "ci",
+                           "policy": "{\"Version\":\"2012-10-17\",\"Statement\":[{\"Effect\":\"Allow\",\"Action\":\"*\",\"Resource\":\"*\"}]}"}}
+    },
+    {
+      "address": "aws_cloudwatch_log_group.old_app",
+      "mode": "managed", "type": "aws_cloudwatch_log_group", "name": "old_app",
+      "change": {"actions": ["delete"], "before": {"name": "/app/old", "retention_in_days": 30}, "after": null}
+    },
+    {
+      "address": "aws_kms_key.data",
+      "mode": "managed", "type": "aws_kms_key", "name": "data",
+      "change": {"actions": ["delete"], "before": {"description": "data key", "deletion_window_in_days": 30}, "after": null}
+    },
+    {
+      "address": "data.aws_caller_identity.current",
+      "mode": "data", "type": "aws_caller_identity", "name": "current",
+      "change": {"actions": ["read"], "before": null, "after": {}}
+    }
+  ]
+}

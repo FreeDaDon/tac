@@ -1,0 +1,50 @@
+{
+  "matches": [
+    {
+      "vulnerability": {"id": "CVE-2023-44487", "severity": "High", "description": "HTTP/2 rapid reset can cause excessive work",
+                        "fix": {"versions": ["0.17.0"], "state": "fixed"},
+                        "cvss": [{"version": "3.1", "metrics": {"baseScore": 7.5}}],
+                        "epss": [{"cve": "CVE-2023-44487", "epss": 0.94, "percentile": 0.99}]},
+      "artifact": {"name": "golang.org/x/net", "version": "v0.7.0", "type": "go-module",
+                   "locations": [{"path": "/usr/local/bin/api"}]},
+      "relatedVulnerabilities": []
+    },
+    {
+      "vulnerability": {"id": "CVE-2023-39325", "severity": "High", "description": "net/http: rapid stream resets",
+                        "fix": {"versions": ["0.17.0"], "state": "fixed"},
+                        "cvss": [{"version": "3.1", "metrics": {"baseScore": 7.5}}],
+                        "epss": [{"cve": "CVE-2023-39325", "epss": 0.05, "percentile": 0.9}]},
+      "artifact": {"name": "golang.org/x/net", "version": "v0.7.0", "type": "go-module",
+                   "locations": [{"path": "/usr/local/bin/api"}]},
+      "relatedVulnerabilities": []
+    },
+    {
+      "vulnerability": {"id": "GHSA-vvpx-j8f3-3w6h", "severity": "Medium", "description": "Uncontrolled resource consumption in HPACK",
+                        "fix": {"versions": ["0.7.0"], "state": "fixed"},
+                        "cvss": [{"version": "3.1", "metrics": {"baseScore": 5.3}}],
+                        "epss": [{"cve": "CVE-2022-41723", "epss": 0.2, "percentile": 0.95}]},
+      "artifact": {"name": "golang.org/x/net", "version": "v0.4.0", "type": "go-module",
+                   "locations": [{"path": "/usr/local/bin/worker"}]},
+      "relatedVulnerabilities": [{"id": "CVE-2022-41723"}]
+    },
+    {
+      "vulnerability": {"id": "CVE-2021-3121", "severity": "High", "description": "gogo/protobuf: missing index validation",
+                        "fix": {"versions": ["1.3.2"], "state": "fixed"},
+                        "cvss": [{"version": "3.1", "metrics": {"baseScore": 8.6}}],
+                        "epss": [{"cve": "CVE-2021-3121", "epss": 0.3, "percentile": 0.96}]},
+      "artifact": {"name": "github.com/gogo/protobuf", "version": "v1.3.1", "type": "go-module",
+                   "locations": [{"path": "/usr/local/bin/api"}]},
+      "relatedVulnerabilities": []
+    },
+    {
+      "vulnerability": {"id": "CVE-2022-28948", "severity": "Low", "description": "yaml: panic on invalid input",
+                        "fix": {"versions": [], "state": "not-fixed"},
+                        "cvss": [{"version": "3.1", "metrics": {"baseScore": 3.1}}]},
+      "artifact": {"name": "gopkg.in/yaml.v3", "version": "v3.0.0", "type": "go-module",
+                   "locations": [{"path": "/usr/local/bin/api"}]},
+      "relatedVulnerabilities": []
+    }
+  ],
+  "source": {"type": "image", "target": {"userInput": "registry.example.com/acme/api:1.4.2"}},
+  "descriptor": {"name": "grype", "version": "0.74.0"}
+}

@@ -1,0 +1,12 @@
+{
+  "Version": "2012-10-17",
+  "Statement": [
+    {"Sid": "AppBucketObjects", "Effect": "Allow", "Action": ["s3:GetObject", "s3:PutObject"],
+     "Resource": "arn:aws:s3:::acme-app-uploads/*"},
+    {"Sid": "OrdersTable", "Effect": "Allow", "Action": ["dynamodb:GetItem", "dynamodb:PutItem", "dynamodb:Query"],
+     "Resource": "arn:aws:dynamodb:us-east-1:123456789012:table/orders"},
+    {"Sid": "ReadOnlyDescribe", "Effect": "Allow", "Action": ["ec2:DescribeInstances"], "Resource": "*"},
+    {"Sid": "DenyUnencryptedUploads", "Effect": "Deny", "Action": "s3:PutObject", "Resource": "arn:aws:s3:::acme-app-uploads/*",
+     "Condition": {"Null": {"s3:x-amz-server-side-encryption": "true"}}}
+  ]
+}

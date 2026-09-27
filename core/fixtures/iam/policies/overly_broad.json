@@ -1,0 +1,10 @@
+{
+  "Version": "2012-10-17",
+  "Statement": [
+    {"Sid": "S3Everything", "Effect": "Allow", "Action": ["s3:*"], "Resource": "*"},
+    {"Sid": "LaunchAnything", "Effect": "Allow", "Action": ["ec2:RunInstances", "iam:PassRole", "ec2:DescribeInstances"], "Resource": "*"},
+    {"Sid": "AllButIam", "Effect": "Allow", "NotAction": "iam:*", "Resource": "*"},
+    {"Sid": "RotateOwnKeys", "Effect": "Allow", "Action": ["iam:CreateAccessKey", "iam:DeleteAccessKey"],
+     "Resource": "arn:aws:iam::123456789012:user/${aws:username}"}
+  ]
+}

@@ -1,0 +1,22 @@
+{
+  "format_version": "1.0",
+  "terraform_version": "1.8.5",
+  "values": {
+    "root_module": {
+      "resources": [
+        {"address": "aws_s3_bucket.logs", "mode": "managed", "type": "aws_s3_bucket", "name": "logs",
+         "values": {"bucket": "acme-prod-logs", "acl": "private", "versioning": [{"enabled": false}]}},
+        {"address": "aws_instance.web", "mode": "managed", "type": "aws_instance", "name": "web",
+         "values": {"instance_type": "t3.small", "tags": {"env": "prod"}}},
+        {"address": "aws_lambda_function.hotfix", "mode": "managed", "type": "aws_lambda_function", "name": "hotfix",
+         "values": {"function_name": "hotfix"}}
+      ],
+      "child_modules": [
+        {"address": "module.db", "resources": [
+          {"address": "module.db.aws_db_instance.this", "mode": "managed", "type": "aws_db_instance", "name": "this",
+           "values": {"identifier": "prod-db", "password": "rotated-value", "storage_encrypted": true}}
+        ]}
+      ]
+    }
+  }
+}
