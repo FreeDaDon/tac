@@ -66,6 +66,7 @@ class AgentRequest(BaseModel):
     model: ModelName | None = None  # None -> model router decides
     allow_cache: bool = False
     timeout_s: int | None = None
+    max_budget_usd: float | None = None  # set by execute_template from the run's remaining budget
 
 
 class AgentResponse(BaseModel):

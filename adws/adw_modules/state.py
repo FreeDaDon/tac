@@ -51,6 +51,9 @@ class ADWState:
         self.data.phases[phase] = status
 
     def add_usage(self, usage: Usage) -> None:
+        from .budget import record_usage
+
+        record_usage(self.adw_id, usage)
         self.data.usage = self.data.usage.add(usage)
 
     def gate_report(self) -> GateReport:
@@ -75,7 +78,10 @@ class ADWState:
                 fcntl.flock(lf, fcntl.LOCK_UN)
 
     def save(self, step: str | None = None) -> None:
+        from .budget import spent
+
         self.data.updated = utcnow()
+        self.data.usage = spent(self.adw_id)  # ledger is the source of truth for spend
         if step:
             self.data.phases.setdefault(step, "running")
         payload = self.data.model_dump_json(indent=2)
@@ -105,6 +111,9 @@ class ADWState:
         state = cls.__new__(cls)
         state.adw_id = adw_id
         state.data = ADWStateData.model_validate(json.loads(path.read_text()))
+        from .budget import spent
+
+        state.data.usage = spent(adw_id)
         return state
 
     @classmethod

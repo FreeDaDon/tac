@@ -18,7 +18,7 @@ from pathlib import Path
 from typing import Protocol
 
 from . import telemetry
-from .budget import Budget, BudgetExceeded, default_budget_usd
+from .budget import Budget, BudgetExceeded, default_budget_usd, record_usage, spent
 from .cache import PromptCache
 from .data_types import RETRYABLE, AgentRequest, AgentResponse, RetryCode, Usage
 from .model_router import route
@@ -95,6 +95,8 @@ class ClaudeRunner:
             cmd += ["--mcp-config", str(mcp)]
         # the run's own artifact dir (inputs, screenshots) lives in the main checkout, outside the worktree
         cmd += ["--add-dir", str(run_dir(request.adw_id))]
+        if request.max_budget_usd is not None:
+            cmd += ["--max-budget-usd", f"{max(request.max_budget_usd, 0.01):.2f}"]
         if skip_permissions_allowed(request.working_dir, request.adw_id):
             cmd.append("--dangerously-skip-permissions")
         else:
@@ -133,11 +135,13 @@ class ClaudeRunner:
         is_error = bool(result.get("is_error"))
         code = RetryCode.NONE
         if is_error:
-            code = (
-                RetryCode.ERROR_DURING_EXECUTION
-                if result.get("subtype") == "error_during_execution"
-                else RetryCode.EXECUTION_ERROR
-            )
+            subtype = str(result.get("subtype", ""))
+            if "budget" in subtype:
+                code = RetryCode.BUDGET_EXCEEDED  # never retried
+            elif subtype == "error_during_execution":
+                code = RetryCode.ERROR_DURING_EXECUTION
+            else:
+                code = RetryCode.EXECUTION_ERROR
         return AgentResponse(
             output=str(result.get("result", "")), success=not is_error, session_id=result.get("session_id"),
             retry_code=code, model=model, usage=usage,
@@ -192,7 +196,7 @@ def execute_template(request: AgentRequest, runner: Runner | None = None) -> Age
     runner = runner or get_runner()
     state = ADWState.load(request.adw_id)
     model_set = state.data.model_set if state else "base"
-    budget = Budget(state.data.budget_usd if state else default_budget_usd(), state.data.usage if state else None)
+    budget = Budget(state.data.budget_usd if state else default_budget_usd(), spent(request.adw_id))
 
     try:
         budget.check()
@@ -218,18 +222,18 @@ def execute_template(request: AgentRequest, runner: Runner | None = None) -> Age
                            agent=request.agent_name, model=model, cached=True)
             return hit
 
+    if budget.limit_usd > 0:
+        request = request.model_copy(update={"max_budget_usd": round(budget.limit_usd - budget.spent.cost_usd, 4)})
     started = time.monotonic()
     response = runner.run(request, prompt, model, out_dir)
     for delay in RETRY_DELAYS:
         if response.success or response.retry_code not in RETRYABLE:
             break
         time.sleep(delay if os.getenv("TAC_AGENT_RUNNER") != "mock" else 0)
+        record_usage(request.adw_id, response.usage, request.slash_command)
         response = runner.run(request, prompt, model, out_dir)
 
-    if state:
-        state.reload()
-        state.add_usage(response.usage)
-        state.save()
+    record_usage(request.adw_id, response.usage, request.slash_command)
     telemetry.emit(
         request.adw_id, "agent_call", message=f"{request.slash_command} -> {'ok' if response.success else 'fail'}",
         agent=request.agent_name, model=response.model or model, success=response.success,

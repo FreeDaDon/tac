@@ -2,7 +2,10 @@
 
 from __future__ import annotations
 
+import fcntl
+import json
 import os
+from pathlib import Path
 
 from .data_types import Usage
 
@@ -48,3 +51,34 @@ class Budget:
 
     def record(self, usage: Usage) -> None:
         self.spent = self.spent.add(usage)
+
+
+# ----------------------------------------------------------------------------- ledger
+# Spend is recorded append-only, one line per agent call, under a file lock. Budget checks
+# and the state file both read from here, so a stale ADWState save can never erase spend.
+def _ledger(adw_id: str) -> Path:
+    from .utils import run_dir
+
+    return run_dir(adw_id) / "usage.jsonl"
+
+
+def record_usage(adw_id: str, usage: Usage, command: str = "") -> None:
+    path = _ledger(adw_id)
+    path.parent.mkdir(parents=True, exist_ok=True)
+    with open(path, "a") as fh:
+        fcntl.flock(fh, fcntl.LOCK_EX)
+        fh.write(json.dumps({"command": command, **usage.model_dump()}) + "\n")
+        fcntl.flock(fh, fcntl.LOCK_UN)
+
+
+def spent(adw_id: str) -> Usage:
+    path = _ledger(adw_id)
+    total = Usage()
+    if not path.exists():
+        return total
+    for line in path.read_text().splitlines():
+        if line.strip():
+            row = json.loads(line)
+            row.pop("command", None)
+            total = total.add(Usage.model_validate(row))
+    return total

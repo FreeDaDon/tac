@@ -20,7 +20,7 @@ TOOL = "secret_scan"
 ALLOWLIST_FILENAME = ".secretsallow"
 SKIP_DIRS = frozenset({".git", "node_modules", ".venv", "venv", "trees", "dist", "__pycache__", ".mypy_cache",
                        ".ruff_cache", ".pytest_cache"})
-SKIP_PATH_PARTS: tuple[tuple[str, ...], ...] = (("agent", "runs"),)
+SKIP_PATH_PARTS: tuple[tuple[str, ...], ...] = (("agent", "runs"), ("agent", "reports"))
 DEFAULT_MAX_BYTES = 1_000_000
 DEFAULT_ENTROPY_THRESHOLD = 3.5
 

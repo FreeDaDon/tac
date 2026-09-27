@@ -185,3 +185,39 @@ def test_claude_runner_grants_run_dir(tac_root: Path, monkeypatch: pytest.Monkey
     out.mkdir()
     agent.ClaudeRunner().run(AgentRequest(adw_id="ab12cd34", agent_name="t", slash_command="/commit"), "hi", "haiku", out)
     assert f"--add-dir {tac_root / 'agent' / 'runs' / 'ab12cd34'}" in argv_file.read_text()
+
+
+def test_stale_state_save_cannot_erase_spend(tac_root: Path) -> None:
+    """Live-run regression: a workflow holding a stale ADWState saved over usage recorded by agent calls,
+    hiding $0.81 of spend from the budget check."""
+    class Costly(MockRunner):
+        def run(self, request, prompt, model, output_dir):
+            r = super().run(request, prompt, model, output_dir)
+            r.usage = Usage(cost_usd=0.9)
+            return r
+
+    stale = ADWState("ab12cd34", budget_usd=1.5)
+    stale.save()
+    for i in range(2):
+        execute_template(AgentRequest(adw_id="ab12cd34", agent_name=f"a{i}", slash_command="/commit"), runner=Costly())
+    stale.update(plan_file="specs/x.md")
+    stale.save()  # stale object written after the agent calls
+    loaded = ADWState.load("ab12cd34")
+    assert loaded and abs(loaded.data.usage.cost_usd - 1.8) < 1e-9
+    resp = execute_template(AgentRequest(adw_id="ab12cd34", agent_name="a3", slash_command="/commit"), runner=Costly())
+    assert resp.retry_code == RetryCode.BUDGET_EXCEEDED
+
+
+def test_remaining_budget_passed_per_call(tac_root: Path, monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
+    seen: dict[str, float | None] = {}
+
+    class Capture(MockRunner):
+        def run(self, request, prompt, model, output_dir):
+            seen["cap"] = request.max_budget_usd
+            return super().run(request, prompt, model, output_dir)
+
+    s = ADWState("ab12cd34", budget_usd=2.0)
+    s.add_usage(Usage(cost_usd=0.5))
+    s.save()
+    execute_template(AgentRequest(adw_id="ab12cd34", agent_name="c", slash_command="/commit"), runner=Capture())
+    assert seen["cap"] == 1.5
