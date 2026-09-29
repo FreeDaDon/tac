@@ -22,7 +22,7 @@ class Finding(BaseModel):
 
 
 class AnalysisReport(BaseModel):
-    pack: Literal["swe", "devops", "soc", "iam"]
+    pack: Literal["swe", "devops", "soc", "iam", "mcp_gov", "gcp_sre"]
     tool: str                         # e.g. "tfplan", "auth_log", "iam_policy"
     input: str                        # input path or description
     findings: list[Finding] = Field(default_factory=list)

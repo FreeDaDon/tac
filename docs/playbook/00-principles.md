@@ -118,5 +118,5 @@ never cached.
 
 ### 16. Humans own irreversible actions
 Agents never apply infrastructure, change access, run containment, or push to main. Domain packs ship
-as `pr_only` (devops, iam) or `report_only` (soc). Only the swe pack can reach ZTE, and only through all
+as `pr_only` (devops, iam, mcp_gov, gcp_sre) or `report_only` (soc). Only the swe pack can reach ZTE, and only through all
 locks (`adws/adw_ship_iso.py`).

@@ -25,6 +25,8 @@ TEMPLATES = {
     "reflect": "Reflect $1 $2",
     "soc_triage": "Triage $1 $2",
     "iam_access_review": "IAM $1 $2",
+    "mcp_connector_review": "MCP $1 $2",
+    "gcp_sre_triage": "SRE $1 $2",
     "devops_iac_plan": "IaC $1 $2",
 }
 

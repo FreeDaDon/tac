@@ -18,7 +18,8 @@
              ▼                           ▼                          ▼
       .claude/commands/*.md         core/ (no LLM)           app/ control plane
       (prompt layer, hooks,         security · devops ·      FastAPI + WebSocket
-       hardened settings)           soc · iam · export       + Vite/TS console
+       hardened settings)           soc · iam · mcp_gov ·    + Vite/TS console
+                                        gcp_sre · export
 ```
 
 **Rule of thumb:** code owns state, control flow, validation and verdicts. Agents own

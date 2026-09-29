@@ -11,7 +11,7 @@ from pydantic import BaseModel, ConfigDict, Field
 ModelSet = Literal["base", "heavy"]
 ModelName = Literal["haiku", "sonnet", "opus"]
 IssueClass = Literal["/feature", "/bug", "/chore", "/patch"]
-DomainPack = Literal["swe", "devops", "soc", "iam"]
+DomainPack = Literal["swe", "devops", "soc", "iam", "mcp_gov", "gcp_sre"]
 ShipPolicy = Literal["zte_allowed", "pr_only", "report_only"]
 Severity = Literal["blocker", "tech_debt", "skippable"]
 GateStatus = Literal["passed", "failed", "skipped", "error"]

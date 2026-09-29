@@ -1,0 +1,18 @@
+[2025-06-30 12:00:01,100] INFO [GroupCoordinator 1]: Preparing to rebalance group orders-consumer with old generation 41 (kafka.coordinator.group.GroupCoordinator)
+[2025-06-30 12:01:05,000] WARN [Consumer clientId=orders-1, groupId=orders-consumer] Attempt to heartbeat failed since group is rebalancing
+[2025-06-30 12:01:07,000] INFO [Consumer clientId=orders-1, groupId=orders-consumer] Revoking previously assigned partitions orders-0, orders-1
+[2025-06-30 12:01:20,000] WARN [Consumer clientId=orders-1, groupId=orders-consumer] Attempt to heartbeat failed since group is rebalancing
+[2025-06-30 12:01:22,000] INFO [Consumer clientId=orders-1, groupId=orders-consumer] Revoking previously assigned partitions orders-0, orders-1
+[2025-06-30 12:01:35,000] WARN [Consumer clientId=orders-1, groupId=orders-consumer] Attempt to heartbeat failed since group is rebalancing
+[2025-06-30 12:01:37,000] INFO [Consumer clientId=orders-1, groupId=orders-consumer] Revoking previously assigned partitions orders-0, orders-1
+[2025-06-30 12:01:50,000] WARN [Consumer clientId=orders-1, groupId=orders-consumer] Attempt to heartbeat failed since group is rebalancing
+[2025-06-30 12:01:52,000] INFO [Consumer clientId=orders-1, groupId=orders-consumer] Revoking previously assigned partitions orders-0, orders-1
+[2025-06-30 12:02:10,000] ERROR [Consumer clientId=orders-1, groupId=orders-consumer] Offset commit failed on partition orders-0: CommitFailedException: Commit cannot be completed since the group has already rebalanced; max.poll.interval.ms exceeded
+[2025-06-30 12:02:30,000] WARN consumer lag=48211 group=orders-consumer topic=orders partition=0
+[2025-06-30 12:02:40,000] WARN consumer lag=1200 group=orders-consumer topic=orders partition=1
+[2025-06-30 12:03:00,000] ERROR [Producer clientId=billing] Connection to node 2 (kafka-2.internal/10.0.4.12:9092) could not be established. Broker may not be available.
+[2025-06-30 12:03:01,000] WARN [Partition orders-0 broker=1] Shrinking ISR from 1,2,3 to 1
+[2025-06-30 12:03:05,000] ERROR [ReplicaManager broker=1] NotEnoughReplicasException: The size of the current ISR Set(1) is insufficient to satisfy the min.insync.replicas requirement of 2
+[2025-06-30 12:04:00,000] ERROR org.apache.kafka.common.errors.TopicAuthorizationException: Not authorized to access topics: [payments] for principal User:svc-billing
+[2025-06-30 12:04:30,000] ERROR org.apache.kafka.common.errors.TimeoutException: Expiring 12 record(s) for billing-0: 120001 ms has passed since batch creation, delivery timeout
+[2025-06-30 12:05:00,000] INFO Started ordinary background job token=sk-ant-fixture0000000000000000000000

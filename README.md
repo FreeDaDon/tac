@@ -3,7 +3,7 @@
 A production-grade framework for running AI coding agents **out of the loop** safely: turning
 an issue into a validated PR, with worktree isolation, typed trust boundaries, self-healing test
 loops, an adversarial red-team gate, cost budgets, a live control plane, and runnable domain packs
-for **Software Engineering, DevOps/IaC, SOC and IAM**.
+for **Software Engineering, DevOps/IaC, SOC, IAM, MCP/AI-connector governance and GCP SRE**.
 
 It generalizes the Tactical Agentic Coding course architecture (TAC-2 → TAC-8) and fixes the
 places where the course code was educational rather than safe. See
@@ -26,6 +26,8 @@ TAC_AGENT_RUNNER=mock uv run adws/adw_sdlc_iso.py --issue-file specs/examples/is
 # real run (needs ANTHROPIC_API_KEY or a logged-in `claude` CLI)
 uv run adws/adw_sdlc_iso.py --issue 42                  # GitHub issue -> PR
 uv run adws/adw_domain_iso.py --pack soc --input core/fixtures/soc/auth.log
+uv run adws/adw_domain_iso.py --pack mcp_gov --input core/fixtures/mcp_gov --fail-on high   # AI connector intake
+uv run adws/adw_domain_iso.py --pack gcp_sre --input core/fixtures/gcp_sre                   # GCP SRE triage
 scripts/start.sh                                         # dashboard at http://127.0.0.1:8000
 ```
 
@@ -37,10 +39,10 @@ scripts/start.sh                                         # dashboard at http://1
 | `adws/adw_modules/` | state, agent runner, model router, budget, cache, security, gates, repair, redteam, memory, KPIs, telemetry, git, GitHub, worktree |
 | `adws/adw_triggers/` | HMAC-verified webhook, cron poller, Todone `tasks.md` queue |
 | `.claude/` | slash-command templates (the prompt layer), fail-closed hooks, hardened `settings.json` |
-| `core/` | deterministic domain tools, no LLM calls: security, devops, soc, iam, export (md/json/SARIF), fixtures |
+| `core/` | deterministic domain tools, no LLM calls: security, devops, soc, iam, mcp_gov, gcp_sre, export (md/json/SARIF), fixtures |
 | `app/` | control plane: FastAPI with a WebSocket event stream, and a Vite/TypeScript operator console |
 | `agent/` | runtime: run state and events, KPIs (`agentic_kpis.md`), lessons memory, reports |
-| `specs/` | plan templates (feature, bug, chore, patch, infra_change, incident_triage, access_review) and generated plans |
+| `specs/` | plan templates in `specs/templates/` (feature, bug, chore, patch, infra_change, incident_triage, access_review, ai_connector_review, gcp_sre_incident) and generated plans |
 | `docs/playbook/` | the playbook: start at [00-principles](docs/playbook/00-principles.md) |
 
 ## Guarantees (enforced in code, covered by tests)
@@ -63,7 +65,7 @@ scripts/start.sh                                         # dashboard at http://1
 | [02-architecture](docs/playbook/02-architecture.md) | layers, a run end to end, state layout, isolation, extension points |
 | [03-security-model](docs/playbook/03-security-model.md) | threat model, controls, residual risks |
 | [04-zte-readiness](docs/playbook/04-zte-readiness.md) | the ship locks, the graduation ladder, the pre-flight checklist |
-| 05-domain-[swe](docs/playbook/05-domain-swe.md) / [devops](docs/playbook/05-domain-devops.md) / [soc](docs/playbook/05-domain-soc.md) / [iam](docs/playbook/05-domain-iam.md) | domain packs |
+| 05-domain-[swe](docs/playbook/05-domain-swe.md) / [devops](docs/playbook/05-domain-devops.md) / [soc](docs/playbook/05-domain-soc.md) / [iam](docs/playbook/05-domain-iam.md) / [mcp-gov](docs/playbook/05-domain-mcp-gov.md) / [gcp-sre](docs/playbook/05-domain-gcp-sre.md) | domain packs |
 | [06-advanced-patterns](docs/playbook/06-advanced-patterns.md) | router and budgets, red team, lessons memory, cache: what each is worth |
 | [07-operations-runbook](docs/playbook/07-operations-runbook.md) | daily commands, triage, failure table, maintenance |
 
@@ -71,4 +73,4 @@ scripts/start.sh                                         # dashboard at http://1
 
 Python 3.12 with uv, Node 22 with npm, git, the `claude` CLI, and `gh` for the GitHub flow.
 Terraform, SIEMs and cloud CLIs are **not** required: the domain packs analyze exported artifacts
-(`terraform show -json`, log files, scanner JSON, IAM exports).
+(`terraform show -json`, log files, Splunk exports, scanner JSON, IAM exports, MCP manifests).

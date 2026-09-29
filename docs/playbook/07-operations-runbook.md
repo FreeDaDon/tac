@@ -21,6 +21,8 @@ scripts/check.sh               # all gates green before any agent runs
 | Check ship locks without merging | `uv run adws/adw_ship_iso.py --adw-id <id> --dry-run` |
 | SOC triage | `uv run adws/adw_domain_iso.py --pack soc --input /path/auth.log` |
 | IAM review with a PR | `uv run adws/adw_domain_iso.py --pack iam --input /path/iam/ --propose` |
+| AI connector intake review | `uv run adws/adw_domain_iso.py --pack mcp_gov --input /path/connector/ --fail-on high` |
+| GCP incident / Terraform triage | `uv run adws/adw_domain_iso.py --pack gcp_sre --input /path/exports/` |
 | Deterministic only (no model) | add `--no-agent` |
 | Offline dry run (no cost) | prefix with `TAC_AGENT_RUNNER=mock` |
 | Queue work | edit `tasks.md`, then `uv run adws/adw_triggers/trigger_todone.py` |

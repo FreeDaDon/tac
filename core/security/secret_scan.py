@@ -97,6 +97,20 @@ def redact(secret: str) -> str:
     return f"{secret[:4]}…({len(secret)} chars)"
 
 
+def redact_secrets(text: str) -> str:
+    """Replace every known-format secret in `text` with a `[REDACTED:<rule>]` marker (for evidence and samples)."""
+    for rule in RULES:
+        def repl(m: re.Match[str], rule: SecretRule = rule) -> str:
+            return m.group(0).replace(m.group(rule.group), f"[REDACTED:{rule.rule_id}]")
+
+        text = rule.pattern.sub(repl, text)
+
+    def redact_generic(m: re.Match[str]) -> str:
+        return m.group(0) if _PLACEHOLDER.search(m.group(2)) else m.group(0).replace(m.group(2), "[REDACTED:GENERIC]")
+
+    return _GENERIC_ASSIGNMENT.sub(redact_generic, text)
+
+
 def parse_allowlist(text: str) -> Allowlist:
     """Lines are path globs (relative to the allowlist's directory) or `fingerprint:<hex16>`; `#` comments."""
     globs: list[str] = []
