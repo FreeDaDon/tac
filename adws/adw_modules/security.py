@@ -133,6 +133,9 @@ SAFE_ENV_KEYS = {
     "PYTHONUNBUFFERED",
     "TAC_DASHBOARD_URL",
     "TAC_PROJECT_ROOT",
+    "JEV_BACKEND",
+    "OPENROUTER_API_KEY",  # Jev live backend via OpenRouter (adws/adw_modules/jev.py); unused with the mock backend
+    "TYPESAFE_API_KEY",    # Jev live backend via TypeSafe's own endpoint; unused with the mock backend
 }
 
 

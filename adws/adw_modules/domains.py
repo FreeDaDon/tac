@@ -50,6 +50,19 @@ DOMAINS: dict[str, DomainSpec] = {
         extra_commands=("/iam_policy_fix",),
         ship_policy="pr_only",
     ),
+    "mcp_gov": DomainSpec(
+        name="mcp_gov",
+        description="MCP server/connector intake: manifest and RBAC-scope audit, prompt-injection and exfiltration scan. "
+                    "Never registers or enables a connector.",
+        analyze_command="/mcp_connector_review",
+        ship_policy="pr_only",
+    ),
+    "gcp_sre": DomainSpec(
+        name="gcp_sre",
+        description="GCP Terraform/IAM audit, Splunk/Kafka log triage, Node.js stack traces. Never applies or changes GCP.",
+        analyze_command="/gcp_sre_triage",
+        ship_policy="pr_only",
+    ),
 }
 
 

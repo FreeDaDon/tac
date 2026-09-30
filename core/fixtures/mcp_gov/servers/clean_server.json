@@ -1,0 +1,19 @@
+{
+  "name": "docs-search",
+  "version": "1.4.2",
+  "transport": "https",
+  "url": "https://docs-mcp.corp.example.com/mcp",
+  "repository": "https://git.corp.example.com/platform/docs-mcp",
+  "publisher": "platform-team",
+  "auth": {"type": "oauth2", "flow": "authorization_code", "pkce": true, "scopes": ["docs.read"]},
+  "governance": {"approved_groups": ["grp-ai-docs-users"]},
+  "tools": [
+    {
+      "name": "search_docs",
+      "description": "Search the internal documentation index.",
+      "annotations": {"readOnlyHint": true, "openWorldHint": false},
+      "requiredScopes": ["docs.read"],
+      "inputSchema": {"type": "object", "properties": {"query": {"type": "string", "maxLength": 200}}}
+    }
+  ]
+}

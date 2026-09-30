@@ -1,0 +1,13 @@
+2025-06-30T13:00:00.123Z ERROR Error: connect ETIMEDOUT 10.20.30.40:6379
+    at TCPConnectWrap.afterConnect [as oncomplete] (node:net:1555:16)
+    at RedisClient.connect (/srv/app/node_modules/ioredis/built/redis/index.js:300:12)
+    at async warmCache (/srv/app/src/cache.js:12:5)
+2025-06-30T13:00:05.000Z ERROR KafkaJSNumberOfRetriesExceeded: Connection error: connect ECONNREFUSED 10.0.4.12:9092
+    at Object.retry (/srv/app/node_modules/kafkajs/src/retry/index.js:56:9)
+    at async Consumer.connect (/srv/app/node_modules/kafkajs/src/consumer/index.js:200:5)
+    at async start (file:///srv/app/src/worker.mjs:20:3)
+Caused by: KafkaJSConnectionError: Connection error: connect ECONNREFUSED 10.0.4.12:9092
+2025-06-30T13:00:09.000Z ERROR (node:4123) UnhandledPromiseRejectionWarning: Error: EMFILE: too many open files, open '/tmp/upload-1'
+    at async Object.open (node:internal/fs/promises:639:25)
+    at async saveUpload (/srv/app/src/upload.js:33:7)
+2025-06-30T13:00:10.000Z INFO healthy

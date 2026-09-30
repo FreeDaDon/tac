@@ -9,7 +9,7 @@ from pathlib import Path
 from typing import Any
 
 from core.common import AnalysisReport, Finding
-from core.security.secret_scan import iter_files, read_text_file
+from core.security.secret_scan import iter_files, read_text_file, redact_secrets
 
 TOOL = "unicode_scan"
 DEFAULT_MAX_LEN = 10_000
@@ -44,6 +44,11 @@ def cap_length(text: str, max_len: int = DEFAULT_MAX_LEN, marker: str = TRUNCATI
 def sanitize_untrusted(text: str, max_len: int = DEFAULT_MAX_LEN, keep_newlines: bool = True) -> str:
     """Strip control/bidi/zero-width characters, then cap length."""
     return cap_length(strip_control_chars(text, keep_newlines=keep_newlines), max_len)
+
+
+def snippet(text: str, max_len: int = 200) -> str:
+    """Untrusted line -> single-line, secret-redacted, control-stripped, length-capped evidence string."""
+    return sanitize_untrusted(redact_secrets(text.strip()), max_len=max_len, keep_newlines=False)
 
 
 def escape_html(text: str) -> str:

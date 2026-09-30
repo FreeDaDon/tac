@@ -30,6 +30,8 @@ COMMAND_CLASS: dict[str, TaskClass] = {
     "/soc_tune_rule": "heavy",
     "/iam_access_review": "standard",
     "/iam_policy_fix": "heavy",
+    "/mcp_connector_review": "heavy",
+    "/gcp_sre_triage": "standard",
     "/devops_iac_plan": "heavy",
     "/devops_drift_review": "standard",
     "/feature": "heavy",

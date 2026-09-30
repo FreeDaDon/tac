@@ -5,7 +5,7 @@ from __future__ import annotations
 import argparse
 import json
 import sys
-from collections.abc import Iterator
+from collections.abc import Callable, Iterator
 from pathlib import Path
 from typing import Any, Protocol
 
@@ -16,7 +16,11 @@ from core.devops import drift, rollback, tfplan
 from core.export.jsonout import to_json
 from core.export.markdown import render_reports
 from core.export.sarif import to_sarif
+from core.gcp_sre import logs as sre_logs
+from core.gcp_sre import nodetrace, tfgcp
 from core.iam import audit, policy, rbac, revoke
+from core.loaders import load_structured
+from core.mcp_gov import injection, manifest
 from core.security import sanitize, secret_scan, sql_security
 from core.security.secret_scan import SKIP_DIRS
 from core.soc import logs, sigma, vuln_triage, zeek
@@ -38,9 +42,15 @@ PACK_TOOLS: dict[str, dict[str, Analyzer]] = {
             "sigma": sigma.analyze_file, "vuln_triage": vuln_triage.analyze_file},
     "iam": {"iam_policy": policy.analyze_file, "rbac": rbac.analyze_file, "iam_audit": audit.analyze_file,
             "iam_revoke": revoke.analyze_file},
+    "mcp_gov": {"mcp_manifest": manifest.analyze_file, "connector_scan": injection.analyze_file},
+    "gcp_sre": {"gcp_tf": tfgcp.analyze_file, "sre_logs": sre_logs.analyze_file, "node_trace": nodetrace.analyze_file},
+}
+# Extra tools that also run (when no --tool is given) on a file another tool was auto-detected for.
+COMPANIONS: dict[tuple[str, str], tuple[tuple[str, Callable[[Path], bool]], ...]] = {
+    ("gcp_sre", "sre_logs"): (("node_trace", nodetrace.looks_like_node_trace),),
 }
 # Tools that consume the same input kind as another (auto-detected) tool.
-INPUT_KIND = {"drift": "tfplan", "rollback": "tfplan", "iam_revoke": "iam_audit"}
+INPUT_KIND = {"drift": "tfplan", "rollback": "tfplan", "iam_revoke": "iam_audit", "node_trace": "sre_logs"}
 AUTH_LOG_NAMES = frozenset({"auth.log", "syslog", "secure", "messages"})
 MAX_SNIFF_BYTES = 50_000_000
 
@@ -108,6 +118,33 @@ def _detect_iam(path: Path) -> str | None:
     return None
 
 
+MCP_TEXT_SUFFIXES = frozenset({".md", ".txt", ".py", ".js", ".mjs", ".cjs", ".ts", ".sh", ".bash", ".json", ".yml", ".yaml",
+                               ".toml", ".ps1", ".rb", ".go", ".html", ".cfg", ".ini"})
+
+
+def _detect_mcp_gov(path: Path) -> str | None:
+    if path.suffix.lower() in {".json", ".yml", ".yaml"}:
+        try:
+            if manifest.looks_like_manifest(load_structured(path)):
+                return "mcp_manifest"
+        except (OSError, UnicodeDecodeError, ValueError, yaml.YAMLError):
+            pass
+    if path.suffix.lower() in MCP_TEXT_SUFFIXES or path.name.upper() in {"SKILL", "SKILL.MD", "DOCKERFILE"}:
+        return "connector_scan"
+    return None
+
+
+def _detect_gcp_sre(path: Path) -> str | None:
+    suffix = path.suffix.lower()
+    if suffix == ".json":
+        data = _load(path)
+        if isinstance(data, dict) and tfgcp.looks_like_terraform_json(data):
+            return "gcp_tf"
+    if suffix in {".json", ".jsonl", ".ndjson", ".csv", ".log", ".txt"}:
+        return "sre_logs" if sre_logs.looks_like_log(path) or nodetrace.looks_like_node_trace(path) else None
+    return None
+
+
 def detect_tool(pack: str, path: Path) -> str:
     """Pick the tool for an input by filename and content; raise UnknownInputError if nothing fits."""
     path = Path(path)
@@ -117,7 +154,8 @@ def detect_tool(pack: str, path: Path) -> str:
         return "sql_lint" if path.suffix.lower() == ".sql" else "secret_scan"
     if path.is_dir():
         raise UnknownInputError(f"{path} is a directory; use run_pack to analyze every file in it")
-    detectors = {"devops": _detect_devops, "soc": _detect_soc, "iam": _detect_iam}
+    detectors = {"devops": _detect_devops, "soc": _detect_soc, "iam": _detect_iam,
+                 "mcp_gov": _detect_mcp_gov, "gcp_sre": _detect_gcp_sre}
     tool = detectors[pack](path)
     if tool is None:
         raise UnknownInputError(f"cannot detect a {pack} tool for {path}")
@@ -140,8 +178,14 @@ def _input_error(pack: str, tool: str, path: Path, exc: Exception) -> AnalysisRe
     )
 
 
+def _companions(pack: str, chosen: str, path: Path, explicit_tool: str | None, opts: dict[str, Any]) -> list[AnalysisReport]:
+    if explicit_tool is not None:
+        return []
+    return [PACK_TOOLS[pack][name](path, **opts) for name, applies in COMPANIONS.get((pack, chosen), ()) if applies(path)]
+
+
 def run_pack(pack: str, input_path: Path, tool: str | None = None, **opts: Any) -> list[AnalysisReport]:
-    """Run one tool (given or detected) on a file, or every recognizable file of a devops/soc/iam directory."""
+    """Run one tool (given or detected) on a file, or every recognizable file of a directory."""
     input_path = Path(input_path)
     if pack not in PACK_TOOLS:
         raise ValueError(f"unknown pack {pack!r}; expected one of {sorted(PACK_TOOLS)}")
@@ -152,7 +196,7 @@ def run_pack(pack: str, input_path: Path, tool: str | None = None, **opts: Any) 
 
     if not input_path.is_dir() or pack == "swe":
         chosen = tool or detect_tool(pack, input_path)
-        return [PACK_TOOLS[pack][chosen](input_path, **opts)]
+        return [PACK_TOOLS[pack][chosen](input_path, **opts), *_companions(pack, chosen, input_path, tool, opts)]
 
     reports = []
     for file in iter_input_files(input_path):
@@ -165,6 +209,7 @@ def run_pack(pack: str, input_path: Path, tool: str | None = None, **opts: Any) 
         chosen = tool or detected
         try:
             reports.append(PACK_TOOLS[pack][chosen](file, **opts))
+            reports.extend(_companions(pack, chosen, file, tool, opts))
         except (ValueError, KeyError, TypeError) as exc:
             reports.append(_input_error(pack, chosen, file, exc))
     return reports

@@ -1,0 +1,588 @@
+{
+ "results": [
+  {
+   "_time": "2025-06-30T12:00:00.000+00:00",
+   "host": "web-1",
+   "sourcetype": "nodejs:app",
+   "index": "prod",
+   "_raw": "INFO request completed status=200 path=/api/orders",
+   "level": "INFO"
+  },
+  {
+   "_time": "2025-06-30T12:00:15.000+00:00",
+   "host": "web-1",
+   "sourcetype": "nodejs:app",
+   "index": "prod",
+   "_raw": "INFO request completed status=200 path=/api/orders",
+   "level": "INFO"
+  },
+  {
+   "_time": "2025-06-30T12:00:30.000+00:00",
+   "host": "web-1",
+   "sourcetype": "nodejs:app",
+   "index": "prod",
+   "_raw": "INFO request completed status=200 path=/api/orders",
+   "level": "INFO"
+  },
+  {
+   "_time": "2025-06-30T12:00:45.000+00:00",
+   "host": "web-1",
+   "sourcetype": "nodejs:app",
+   "index": "prod",
+   "_raw": "INFO request completed status=200 path=/api/orders",
+   "level": "INFO"
+  },
+  {
+   "_time": "2025-06-30T12:01:00.000+00:00",
+   "host": "web-1",
+   "sourcetype": "nodejs:app",
+   "index": "prod",
+   "_raw": "INFO request completed status=200 path=/api/orders",
+   "level": "INFO"
+  },
+  {
+   "_time": "2025-06-30T12:01:15.000+00:00",
+   "host": "web-1",
+   "sourcetype": "nodejs:app",
+   "index": "prod",
+   "_raw": "INFO request completed status=200 path=/api/orders",
+   "level": "INFO"
+  },
+  {
+   "_time": "2025-06-30T12:01:30.000+00:00",
+   "host": "web-1",
+   "sourcetype": "nodejs:app",
+   "index": "prod",
+   "_raw": "INFO request completed status=200 path=/api/orders",
+   "level": "INFO"
+  },
+  {
+   "_time": "2025-06-30T12:01:45.000+00:00",
+   "host": "web-1",
+   "sourcetype": "nodejs:app",
+   "index": "prod",
+   "_raw": "INFO request completed status=200 path=/api/orders",
+   "level": "INFO"
+  },
+  {
+   "_time": "2025-06-30T12:02:00.000+00:00",
+   "host": "web-1",
+   "sourcetype": "nodejs:app",
+   "index": "prod",
+   "_raw": "INFO request completed status=200 path=/api/orders",
+   "level": "INFO"
+  },
+  {
+   "_time": "2025-06-30T12:02:15.000+00:00",
+   "host": "web-1",
+   "sourcetype": "nodejs:app",
+   "index": "prod",
+   "_raw": "INFO request completed status=200 path=/api/orders",
+   "level": "INFO"
+  },
+  {
+   "_time": "2025-06-30T12:02:30.000+00:00",
+   "host": "web-1",
+   "sourcetype": "nodejs:app",
+   "index": "prod",
+   "_raw": "INFO request completed status=200 path=/api/orders",
+   "level": "INFO"
+  },
+  {
+   "_time": "2025-06-30T12:02:45.000+00:00",
+   "host": "web-1",
+   "sourcetype": "nodejs:app",
+   "index": "prod",
+   "_raw": "INFO request completed status=200 path=/api/orders",
+   "level": "INFO"
+  },
+  {
+   "_time": "2025-06-30T12:03:00.000+00:00",
+   "host": "web-1",
+   "sourcetype": "nodejs:app",
+   "index": "prod",
+   "_raw": "INFO request completed status=200 path=/api/orders",
+   "level": "INFO"
+  },
+  {
+   "_time": "2025-06-30T12:03:15.000+00:00",
+   "host": "web-1",
+   "sourcetype": "nodejs:app",
+   "index": "prod",
+   "_raw": "INFO request completed status=200 path=/api/orders",
+   "level": "INFO"
+  },
+  {
+   "_time": "2025-06-30T12:03:30.000+00:00",
+   "host": "web-1",
+   "sourcetype": "nodejs:app",
+   "index": "prod",
+   "_raw": "INFO request completed status=200 path=/api/orders",
+   "level": "INFO"
+  },
+  {
+   "_time": "2025-06-30T12:03:45.000+00:00",
+   "host": "web-1",
+   "sourcetype": "nodejs:app",
+   "index": "prod",
+   "_raw": "INFO request completed status=200 path=/api/orders",
+   "level": "INFO"
+  },
+  {
+   "_time": "2025-06-30T12:04:00.000+00:00",
+   "host": "web-1",
+   "sourcetype": "nodejs:app",
+   "index": "prod",
+   "_raw": "INFO request completed status=200 path=/api/orders",
+   "level": "INFO"
+  },
+  {
+   "_time": "2025-06-30T12:04:15.000+00:00",
+   "host": "web-1",
+   "sourcetype": "nodejs:app",
+   "index": "prod",
+   "_raw": "INFO request completed status=200 path=/api/orders",
+   "level": "INFO"
+  },
+  {
+   "_time": "2025-06-30T12:04:30.000+00:00",
+   "host": "web-1",
+   "sourcetype": "nodejs:app",
+   "index": "prod",
+   "_raw": "INFO request completed status=200 path=/api/orders",
+   "level": "INFO"
+  },
+  {
+   "_time": "2025-06-30T12:04:45.000+00:00",
+   "host": "web-1",
+   "sourcetype": "nodejs:app",
+   "index": "prod",
+   "_raw": "INFO request completed status=200 path=/api/orders",
+   "level": "INFO"
+  },
+  {
+   "_time": "2025-06-30T12:05:00.000+00:00",
+   "host": "web-1",
+   "sourcetype": "nodejs:app",
+   "index": "prod",
+   "_raw": "INFO request completed status=200 path=/api/orders",
+   "level": "INFO"
+  },
+  {
+   "_time": "2025-06-30T12:05:15.000+00:00",
+   "host": "web-1",
+   "sourcetype": "nodejs:app",
+   "index": "prod",
+   "_raw": "INFO request completed status=200 path=/api/orders",
+   "level": "INFO"
+  },
+  {
+   "_time": "2025-06-30T12:05:30.000+00:00",
+   "host": "web-1",
+   "sourcetype": "nodejs:app",
+   "index": "prod",
+   "_raw": "INFO request completed status=200 path=/api/orders",
+   "level": "INFO"
+  },
+  {
+   "_time": "2025-06-30T12:05:45.000+00:00",
+   "host": "web-1",
+   "sourcetype": "nodejs:app",
+   "index": "prod",
+   "_raw": "INFO request completed status=200 path=/api/orders",
+   "level": "INFO"
+  },
+  {
+   "_time": "2025-06-30T12:06:00.000+00:00",
+   "host": "web-1",
+   "sourcetype": "nodejs:app",
+   "index": "prod",
+   "_raw": "INFO request completed status=200 path=/api/orders",
+   "level": "INFO"
+  },
+  {
+   "_time": "2025-06-30T12:06:15.000+00:00",
+   "host": "web-1",
+   "sourcetype": "nodejs:app",
+   "index": "prod",
+   "_raw": "INFO request completed status=200 path=/api/orders",
+   "level": "INFO"
+  },
+  {
+   "_time": "2025-06-30T12:06:30.000+00:00",
+   "host": "web-1",
+   "sourcetype": "nodejs:app",
+   "index": "prod",
+   "_raw": "INFO request completed status=200 path=/api/orders",
+   "level": "INFO"
+  },
+  {
+   "_time": "2025-06-30T12:06:45.000+00:00",
+   "host": "web-1",
+   "sourcetype": "nodejs:app",
+   "index": "prod",
+   "_raw": "INFO request completed status=200 path=/api/orders",
+   "level": "INFO"
+  },
+  {
+   "_time": "2025-06-30T12:07:00.000+00:00",
+   "host": "web-1",
+   "sourcetype": "nodejs:app",
+   "index": "prod",
+   "_raw": "INFO request completed status=200 path=/api/orders",
+   "level": "INFO"
+  },
+  {
+   "_time": "2025-06-30T12:07:15.000+00:00",
+   "host": "web-1",
+   "sourcetype": "nodejs:app",
+   "index": "prod",
+   "_raw": "INFO request completed status=200 path=/api/orders",
+   "level": "INFO"
+  },
+  {
+   "_time": "2025-06-30T12:07:30.000+00:00",
+   "host": "web-1",
+   "sourcetype": "nodejs:app",
+   "index": "prod",
+   "_raw": "INFO request completed status=200 path=/api/orders",
+   "level": "INFO"
+  },
+  {
+   "_time": "2025-06-30T12:07:45.000+00:00",
+   "host": "web-1",
+   "sourcetype": "nodejs:app",
+   "index": "prod",
+   "_raw": "INFO request completed status=200 path=/api/orders",
+   "level": "INFO"
+  },
+  {
+   "_time": "2025-06-30T12:08:00.000+00:00",
+   "host": "web-1",
+   "sourcetype": "nodejs:app",
+   "index": "prod",
+   "_raw": "ERROR upstream call failed id=0: connect ECONNREFUSED 10.0.4.12:5432",
+   "level": "ERROR"
+  },
+  {
+   "_time": "2025-06-30T12:08:02.000+00:00",
+   "host": "web-1",
+   "sourcetype": "nodejs:app",
+   "index": "prod",
+   "_raw": "ERROR upstream call failed id=2: connect ECONNREFUSED 10.0.4.12:5432",
+   "level": "ERROR"
+  },
+  {
+   "_time": "2025-06-30T12:08:04.000+00:00",
+   "host": "web-1",
+   "sourcetype": "nodejs:app",
+   "index": "prod",
+   "_raw": "ERROR upstream call failed id=4: connect ECONNREFUSED 10.0.4.12:5432",
+   "level": "ERROR"
+  },
+  {
+   "_time": "2025-06-30T12:08:06.000+00:00",
+   "host": "web-1",
+   "sourcetype": "nodejs:app",
+   "index": "prod",
+   "_raw": "ERROR upstream call failed id=6: connect ECONNREFUSED 10.0.4.12:5432",
+   "level": "ERROR"
+  },
+  {
+   "_time": "2025-06-30T12:08:08.000+00:00",
+   "host": "web-1",
+   "sourcetype": "nodejs:app",
+   "index": "prod",
+   "_raw": "ERROR upstream call failed id=8: connect ECONNREFUSED 10.0.4.12:5432",
+   "level": "ERROR"
+  },
+  {
+   "_time": "2025-06-30T12:08:10.000+00:00",
+   "host": "web-1",
+   "sourcetype": "nodejs:app",
+   "index": "prod",
+   "_raw": "ERROR upstream call failed id=10: connect ECONNREFUSED 10.0.4.12:5432",
+   "level": "ERROR"
+  },
+  {
+   "_time": "2025-06-30T12:08:12.000+00:00",
+   "host": "web-1",
+   "sourcetype": "nodejs:app",
+   "index": "prod",
+   "_raw": "ERROR upstream call failed id=12: connect ECONNREFUSED 10.0.4.12:5432",
+   "level": "ERROR"
+  },
+  {
+   "_time": "2025-06-30T12:08:14.000+00:00",
+   "host": "web-1",
+   "sourcetype": "nodejs:app",
+   "index": "prod",
+   "_raw": "ERROR upstream call failed id=14: connect ECONNREFUSED 10.0.4.12:5432",
+   "level": "ERROR"
+  },
+  {
+   "_time": "2025-06-30T12:08:16.000+00:00",
+   "host": "web-1",
+   "sourcetype": "nodejs:app",
+   "index": "prod",
+   "_raw": "ERROR upstream call failed id=16: connect ECONNREFUSED 10.0.4.12:5432",
+   "level": "ERROR"
+  },
+  {
+   "_time": "2025-06-30T12:08:18.000+00:00",
+   "host": "web-1",
+   "sourcetype": "nodejs:app",
+   "index": "prod",
+   "_raw": "ERROR upstream call failed id=18: connect ECONNREFUSED 10.0.4.12:5432",
+   "level": "ERROR"
+  },
+  {
+   "_time": "2025-06-30T12:08:20.000+00:00",
+   "host": "web-1",
+   "sourcetype": "nodejs:app",
+   "index": "prod",
+   "_raw": "ERROR upstream call failed id=20: connect ECONNREFUSED 10.0.4.12:5432",
+   "level": "ERROR"
+  },
+  {
+   "_time": "2025-06-30T12:08:22.000+00:00",
+   "host": "web-1",
+   "sourcetype": "nodejs:app",
+   "index": "prod",
+   "_raw": "ERROR upstream call failed id=22: connect ECONNREFUSED 10.0.4.12:5432",
+   "level": "ERROR"
+  },
+  {
+   "_time": "2025-06-30T12:08:24.000+00:00",
+   "host": "web-1",
+   "sourcetype": "nodejs:app",
+   "index": "prod",
+   "_raw": "ERROR upstream call failed id=24: connect ECONNREFUSED 10.0.4.12:5432",
+   "level": "ERROR"
+  },
+  {
+   "_time": "2025-06-30T12:08:26.000+00:00",
+   "host": "web-1",
+   "sourcetype": "nodejs:app",
+   "index": "prod",
+   "_raw": "ERROR upstream call failed id=26: connect ECONNREFUSED 10.0.4.12:5432",
+   "level": "ERROR"
+  },
+  {
+   "_time": "2025-06-30T12:08:28.000+00:00",
+   "host": "web-1",
+   "sourcetype": "nodejs:app",
+   "index": "prod",
+   "_raw": "ERROR upstream call failed id=28: connect ECONNREFUSED 10.0.4.12:5432",
+   "level": "ERROR"
+  },
+  {
+   "_time": "2025-06-30T12:08:30.000+00:00",
+   "host": "web-1",
+   "sourcetype": "nodejs:app",
+   "index": "prod",
+   "_raw": "ERROR upstream call failed id=30: connect ECONNREFUSED 10.0.4.12:5432",
+   "level": "ERROR"
+  },
+  {
+   "_time": "2025-06-30T12:08:32.000+00:00",
+   "host": "web-1",
+   "sourcetype": "nodejs:app",
+   "index": "prod",
+   "_raw": "ERROR upstream call failed id=32: connect ECONNREFUSED 10.0.4.12:5432",
+   "level": "ERROR"
+  },
+  {
+   "_time": "2025-06-30T12:08:34.000+00:00",
+   "host": "web-1",
+   "sourcetype": "nodejs:app",
+   "index": "prod",
+   "_raw": "ERROR upstream call failed id=34: connect ECONNREFUSED 10.0.4.12:5432",
+   "level": "ERROR"
+  },
+  {
+   "_time": "2025-06-30T12:08:36.000+00:00",
+   "host": "web-1",
+   "sourcetype": "nodejs:app",
+   "index": "prod",
+   "_raw": "ERROR upstream call failed id=36: connect ECONNREFUSED 10.0.4.12:5432",
+   "level": "ERROR"
+  },
+  {
+   "_time": "2025-06-30T12:08:38.000+00:00",
+   "host": "web-1",
+   "sourcetype": "nodejs:app",
+   "index": "prod",
+   "_raw": "ERROR upstream call failed id=38: connect ECONNREFUSED 10.0.4.12:5432",
+   "level": "ERROR"
+  },
+  {
+   "_time": "2025-06-30T12:08:40.000+00:00",
+   "host": "web-1",
+   "sourcetype": "nodejs:app",
+   "index": "prod",
+   "_raw": "ERROR upstream call failed id=40: connect ECONNREFUSED 10.0.4.12:5432",
+   "level": "ERROR"
+  },
+  {
+   "_time": "2025-06-30T12:08:42.000+00:00",
+   "host": "web-1",
+   "sourcetype": "nodejs:app",
+   "index": "prod",
+   "_raw": "ERROR upstream call failed id=42: connect ECONNREFUSED 10.0.4.12:5432",
+   "level": "ERROR"
+  },
+  {
+   "_time": "2025-06-30T12:08:44.000+00:00",
+   "host": "web-1",
+   "sourcetype": "nodejs:app",
+   "index": "prod",
+   "_raw": "ERROR upstream call failed id=44: connect ECONNREFUSED 10.0.4.12:5432",
+   "level": "ERROR"
+  },
+  {
+   "_time": "2025-06-30T12:08:46.000+00:00",
+   "host": "web-1",
+   "sourcetype": "nodejs:app",
+   "index": "prod",
+   "_raw": "ERROR upstream call failed id=46: connect ECONNREFUSED 10.0.4.12:5432",
+   "level": "ERROR"
+  },
+  {
+   "_time": "2025-06-30T12:08:48.000+00:00",
+   "host": "web-1",
+   "sourcetype": "nodejs:app",
+   "index": "prod",
+   "_raw": "ERROR upstream call failed id=48: connect ECONNREFUSED 10.0.4.12:5432",
+   "level": "ERROR"
+  },
+  {
+   "_time": "2025-06-30T12:08:50.000+00:00",
+   "host": "web-1",
+   "sourcetype": "nodejs:app",
+   "index": "prod",
+   "_raw": "ERROR upstream call failed id=50: connect ECONNREFUSED 10.0.4.12:5432",
+   "level": "ERROR"
+  },
+  {
+   "_time": "2025-06-30T12:08:52.000+00:00",
+   "host": "web-1",
+   "sourcetype": "nodejs:app",
+   "index": "prod",
+   "_raw": "ERROR upstream call failed id=52: connect ECONNREFUSED 10.0.4.12:5432",
+   "level": "ERROR"
+  },
+  {
+   "_time": "2025-06-30T12:08:54.000+00:00",
+   "host": "web-1",
+   "sourcetype": "nodejs:app",
+   "index": "prod",
+   "_raw": "ERROR upstream call failed id=54: connect ECONNREFUSED 10.0.4.12:5432",
+   "level": "ERROR"
+  },
+  {
+   "_time": "2025-06-30T12:08:56.000+00:00",
+   "host": "web-1",
+   "sourcetype": "nodejs:app",
+   "index": "prod",
+   "_raw": "ERROR upstream call failed id=56: connect ECONNREFUSED 10.0.4.12:5432",
+   "level": "ERROR"
+  },
+  {
+   "_time": "2025-06-30T12:08:58.000+00:00",
+   "host": "web-1",
+   "sourcetype": "nodejs:app",
+   "index": "prod",
+   "_raw": "ERROR upstream call failed id=58: connect ECONNREFUSED 10.0.4.12:5432",
+   "level": "ERROR"
+  },
+  {
+   "_time": "2025-06-30T12:08:10.000+00:00",
+   "host": "web-2",
+   "sourcetype": "nodejs:app",
+   "index": "prod",
+   "_raw": "ERROR unhandled route error\nTypeError: Cannot read properties of undefined (reading 'id')\n    at buildOrder (/srv/app/src/orders/build.js:88:31)\n    at async handler (/srv/app/src/routes/orders.js:41:18)\n    at Layer.handle [as handle_request] (/srv/app/node_modules/express/lib/router/layer.js:95:5)\n    at next (node:internal/process/task_queues:95:5)",
+   "level": "ERROR"
+  },
+  {
+   "_time": "2025-06-30T12:08:11.000+00:00",
+   "host": "web-2",
+   "sourcetype": "nodejs:app",
+   "index": "prod",
+   "_raw": "ERROR unhandled route error\nTypeError: Cannot read properties of undefined (reading 'id')\n    at buildOrder (/srv/app/src/orders/build.js:88:31)\n    at async handler (/srv/app/src/routes/orders.js:41:18)\n    at Layer.handle [as handle_request] (/srv/app/node_modules/express/lib/router/layer.js:95:5)\n    at next (node:internal/process/task_queues:95:5)",
+   "level": "ERROR"
+  },
+  {
+   "_time": "2025-06-30T12:08:12.000+00:00",
+   "host": "web-2",
+   "sourcetype": "nodejs:app",
+   "index": "prod",
+   "_raw": "ERROR unhandled route error\nTypeError: Cannot read properties of undefined (reading 'id')\n    at buildOrder (/srv/app/src/orders/build.js:88:31)\n    at async handler (/srv/app/src/routes/orders.js:41:18)\n    at Layer.handle [as handle_request] (/srv/app/node_modules/express/lib/router/layer.js:95:5)\n    at next (node:internal/process/task_queues:95:5)",
+   "level": "ERROR"
+  },
+  {
+   "_time": "2025-06-30T12:08:13.000+00:00",
+   "host": "web-2",
+   "sourcetype": "nodejs:app",
+   "index": "prod",
+   "_raw": "ERROR unhandled route error\nTypeError: Cannot read properties of undefined (reading 'id')\n    at buildOrder (/srv/app/src/orders/build.js:88:31)\n    at async handler (/srv/app/src/routes/orders.js:41:18)\n    at Layer.handle [as handle_request] (/srv/app/node_modules/express/lib/router/layer.js:95:5)\n    at next (node:internal/process/task_queues:95:5)",
+   "level": "ERROR"
+  },
+  {
+   "_time": "2025-06-30T12:08:14.000+00:00",
+   "host": "web-2",
+   "sourcetype": "nodejs:app",
+   "index": "prod",
+   "_raw": "ERROR unhandled route error\nTypeError: Cannot read properties of undefined (reading 'id')\n    at buildOrder (/srv/app/src/orders/build.js:88:31)\n    at async handler (/srv/app/src/routes/orders.js:41:18)\n    at Layer.handle [as handle_request] (/srv/app/node_modules/express/lib/router/layer.js:95:5)\n    at next (node:internal/process/task_queues:95:5)",
+   "level": "ERROR"
+  },
+  {
+   "_time": "2025-06-30T12:08:15.000+00:00",
+   "host": "web-2",
+   "sourcetype": "nodejs:app",
+   "index": "prod",
+   "_raw": "ERROR unhandled route error\nTypeError: Cannot read properties of undefined (reading 'id')\n    at buildOrder (/srv/app/src/orders/build.js:88:31)\n    at async handler (/srv/app/src/routes/orders.js:41:18)\n    at Layer.handle [as handle_request] (/srv/app/node_modules/express/lib/router/layer.js:95:5)\n    at next (node:internal/process/task_queues:95:5)",
+   "level": "ERROR"
+  },
+  {
+   "_time": "2025-06-30T12:09:00.000+00:00",
+   "host": "web-2",
+   "sourcetype": "nodejs:app",
+   "index": "prod",
+   "_raw": "FATAL ERROR: Reached heap limit Allocation failed - JavaScript heap out of memory",
+   "level": "FATAL"
+  },
+  {
+   "_time": "2025-06-30T12:09:05.000+00:00",
+   "host": "web-2",
+   "sourcetype": "nodejs:app",
+   "index": "prod",
+   "_raw": "Container terminated on signal 9 (OOMKilled) Memory limit of 512 MiB exceeded",
+   "level": "ERROR"
+  },
+  {
+   "_time": "2025-06-30T12:09:09.000+00:00",
+   "host": "web-1",
+   "sourcetype": "nodejs:app",
+   "index": "prod",
+   "_raw": "ERROR 403 PERMISSION_DENIED: Caller does not have permission iam.serviceAccounts.actAs",
+   "level": "ERROR"
+  },
+  {
+   "_time": "2025-06-30T12:09:20.000+00:00",
+   "host": "splunk-hf-1",
+   "sourcetype": "nodejs:app",
+   "index": "prod",
+   "_raw": "WARN TcpOutputProc - blocked=true queue is full, Dropping 500 events",
+   "level": "WARN"
+  },
+  {
+   "_time": "2025-06-30T12:09:30.000+00:00",
+   "host": "web-1",
+   "sourcetype": "nodejs:app",
+   "index": "prod",
+   "_raw": "WARN Authorization: Bearer ghp_a1B2c3D4e5F6g7H8i9J0k1L2m3N4o5P6q7R8",
+   "level": "WARN"
+  }
+ ]
+}

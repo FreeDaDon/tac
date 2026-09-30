@@ -5,6 +5,8 @@
   soc:    auth/syslog, JSON events, Zeek, Sigma, vuln scans (report_only)
   iam:    policy lint, RBAC/ABAC, dormant accounts, revocation plan (pr_only, never revokes)
   swe:    secret scan of a directory
+  mcp_gov: MCP manifest/RBAC-scope audit, prompt-injection + exfiltration scan (pr_only, never enables a connector)
+  gcp_sre: GCP Terraform/IAM audit, Splunk/Kafka log triage, Node.js traces (pr_only, never touches GCP)
 
 With --propose (pr_only packs), the report is committed to an isolated worktree branch and a PR
 is opened for human approval.
@@ -12,6 +14,8 @@ is opened for human approval.
 Usage:
   uv run adws/adw_domain_iso.py --pack soc --input core/fixtures/soc/auth.log
   uv run adws/adw_domain_iso.py --pack iam --input core/fixtures/iam --propose
+  uv run adws/adw_domain_iso.py --pack mcp_gov --input core/fixtures/mcp_gov --fail-on high
+  uv run adws/adw_domain_iso.py --pack gcp_sre --input core/fixtures/gcp_sre
 """
 
 from __future__ import annotations
@@ -26,7 +30,7 @@ from adws.adw_modules.agent import execute_template, write_input_file
 from adws.adw_modules.budget import default_budget_usd
 from adws.adw_modules.cli import main_wrapper
 from adws.adw_modules.data_types import AgentRequest, GateResult
-from adws.adw_modules.domains import get_domain
+from adws.adw_modules.domains import DOMAINS, get_domain
 from adws.adw_modules.security import validate_adw_id
 from adws.adw_modules.state import ADWState
 from adws.adw_modules.utils import agent_dir, make_adw_id, parse_json
@@ -125,7 +129,7 @@ def run(pack: str, input_path: str, adw_id: str | None = None, tool: str | None 
 
 def main() -> None:
     p = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
-    p.add_argument("--pack", required=True, choices=["swe", "devops", "soc", "iam"])
+    p.add_argument("--pack", required=True, choices=sorted(DOMAINS))
     p.add_argument("--input", required=True)
     p.add_argument("--tool")
     p.add_argument("--adw-id")

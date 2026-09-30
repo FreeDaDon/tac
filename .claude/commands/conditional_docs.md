@@ -76,11 +76,11 @@ conditions matches your task. Do not read everything: context is a budget.
 
 - core/common.py
   - Conditions:
-    - When adding or changing a deterministic domain tool (devops, soc, iam) or its findings
+    - When adding or changing a deterministic domain tool (devops, soc, iam, mcp_gov, gcp_sre) or its findings
     - When writing prompts that consume `AnalysisReport` findings
 
 - specs/templates/
   - Conditions:
-    - When writing a plan by hand, or an infra change, incident triage or access review document
+    - When writing a plan by hand, or an infra change, incident triage, access review, AI connector review or GCP SRE incident document
 
 <!-- /document appends entries for docs/features/*.md below this line -->

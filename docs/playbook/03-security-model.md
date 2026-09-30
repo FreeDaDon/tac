@@ -33,7 +33,7 @@ still not covered.
 | Webhook authentication | `adws/adw_triggers/trigger_webhook.py` | 127.0.0.1 bind, `X-Hub-Signature-256` HMAC with constant-time compare, body cap, `TAC_TRIGGER_ALLOWED_USERS`, bot-comment loop guard |
 | Workflow allowlist | `adws/adw_triggers/launcher.py: ALLOWED_WORKFLOWS` | Triggers can only start known workflows |
 | ZTE multi-lock | `adws/adw_ship_iso.py: ship_blockers` | `TAC_ZTE_ENABLED=1` + domain policy + all required gates passed + E2E not skipped + budget left + PR with green CI. Server-side merge; the main working copy is never touched |
-| Domain ship policies | `adws/adw_modules/domains.py` | swe `zte_allowed`; devops, iam `pr_only`; soc `report_only`. Domain templates forbid execution |
+| Domain ship policies | `adws/adw_modules/domains.py` | swe `zte_allowed`; devops, iam, mcp_gov, gcp_sre `pr_only`; soc `report_only`. Domain templates forbid execution |
 | Secret-scan gate | `adws/adw_modules/gates.py: run_secret_scan` → `core/security/secret_scan.py` | Deterministic; required for ZTE |
 | Red-team gate | `adws/adw_modules/redteam.py`, `.claude/commands/redteam.md` | Scanners + adversarial read-only agent; critical/high block; checks spec cheating too |
 | Budgets and timeouts | `adws/adw_modules/budget.py`, `agent.py` (`TAC_AGENT_TIMEOUT_S`, process-group kill) | Budget exhaustion stops agent calls and blocks ship |

@@ -1,0 +1,52 @@
+{
+  "format_version": "1.0",
+  "terraform_version": "1.8.5",
+  "values": {
+    "root_module": {
+      "resources": [
+        {"address": "google_service_account.app", "mode": "managed", "type": "google_service_account", "name": "app",
+         "values": {"account_id": "app", "email": "app@acme-prod.iam.gserviceaccount.com"}},
+        {"address": "google_service_account_key.app", "mode": "managed", "type": "google_service_account_key", "name": "app",
+         "values": {"service_account_id": "app@acme-prod.iam.gserviceaccount.com", "key_algorithm": "KEY_ALG_RSA_2048",
+                    "private_key": "REDACTED-BY-FIXTURE-NOT-A-REAL-KEY"}},
+        {"address": "google_project_iam_member.app_owner", "mode": "managed", "type": "google_project_iam_member", "name": "app_owner",
+         "values": {"project": "acme-prod", "role": "roles/owner", "member": "serviceAccount:app@acme-prod.iam.gserviceaccount.com"}},
+        {"address": "google_project_iam_member.app_sa_admin", "mode": "managed", "type": "google_project_iam_member", "name": "app_sa_admin",
+         "values": {"project": "acme-prod", "role": "roles/iam.serviceAccountAdmin", "member": "serviceAccount:app@acme-prod.iam.gserviceaccount.com"}},
+        {"address": "google_project_iam_member.dev_editor", "mode": "managed", "type": "google_project_iam_member", "name": "dev_editor",
+         "values": {"project": "acme-prod", "role": "roles/editor", "member": "user:dev@acme.example"}},
+        {"address": "google_project_iam_member.viewer", "mode": "managed", "type": "google_project_iam_member", "name": "viewer",
+         "values": {"project": "acme-prod", "role": "roles/viewer", "member": "group:sre@acme.example"}},
+        {"address": "google_storage_bucket_iam_member.public", "mode": "managed", "type": "google_storage_bucket_iam_member", "name": "public",
+         "values": {"bucket": "acme-exports", "role": "roles/storage.objectViewer", "member": "allUsers"}},
+        {"address": "google_storage_bucket.exports", "mode": "managed", "type": "google_storage_bucket", "name": "exports",
+         "values": {"name": "acme-exports", "public_access_prevention": "inherited", "uniform_bucket_level_access": false}},
+        {"address": "google_compute_firewall.ssh_any", "mode": "managed", "type": "google_compute_firewall", "name": "ssh_any",
+         "values": {"name": "ssh-any", "direction": "INGRESS", "source_ranges": ["0.0.0.0/0"],
+                    "allow": [{"protocol": "tcp", "ports": ["22", "9092"]}]}},
+        {"address": "google_compute_firewall.internal", "mode": "managed", "type": "google_compute_firewall", "name": "internal",
+         "values": {"name": "internal", "direction": "INGRESS", "source_ranges": ["10.0.0.0/8"],
+                    "allow": [{"protocol": "tcp", "ports": ["22"]}]}},
+        {"address": "google_compute_instance.web", "mode": "managed", "type": "google_compute_instance", "name": "web",
+         "values": {"name": "web",
+                    "service_account": [{"email": "123456789-compute@developer.gserviceaccount.com",
+                                         "scopes": ["https://www.googleapis.com/auth/cloud-platform"]}],
+                    "network_interface": [{"access_config": [{"nat_ip": "203.0.113.10"}]}]}},
+        {"address": "google_sql_database_instance.db", "mode": "managed", "type": "google_sql_database_instance", "name": "db",
+         "values": {"name": "db", "deletion_protection": false,
+                    "settings": [{"ip_configuration": [{"ipv4_enabled": true, "authorized_networks": [{"value": "0.0.0.0/0"}]}],
+                                  "backup_configuration": [{"enabled": false}]}]}},
+        {"address": "google_container_cluster.main", "mode": "managed", "type": "google_container_cluster", "name": "main",
+         "values": {"name": "main", "enable_legacy_abac": true,
+                    "master_authorized_networks_config": [{"cidr_blocks": [{"cidr_block": "0.0.0.0/0"}]}]}}
+      ],
+      "child_modules": [
+        {"address": "module.data",
+         "resources": [
+           {"address": "module.data.google_storage_bucket.ok", "mode": "managed", "type": "google_storage_bucket", "name": "ok",
+            "values": {"name": "acme-private", "public_access_prevention": "enforced", "uniform_bucket_level_access": true}}
+         ]}
+      ]
+    }
+  }
+}

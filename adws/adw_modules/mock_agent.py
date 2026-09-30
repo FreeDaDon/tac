@@ -94,6 +94,8 @@ HANDLERS = {
     "/devops_drift_review": _domain,
     "/soc_triage": _domain,
     "/iam_access_review": _domain,
+    "/mcp_connector_review": _domain,
+    "/gcp_sre_triage": _domain,
     "/soc_tune_rule": _copy_to_output,
     "/iam_policy_fix": _copy_to_output,
 }

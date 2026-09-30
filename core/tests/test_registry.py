@@ -18,6 +18,14 @@ from core.registry import PACK_TOOLS, UnknownInputError, detect_tool, main, run_
     ("iam", "iam/policies/admin.json", "iam_policy"),
     ("iam", "iam/inventory.json", "iam_audit"),
     ("iam", "iam/rbac_model.yaml", "rbac"),
+    ("mcp_gov", "mcp_gov/servers/risky_server.json", "mcp_manifest"),
+    ("mcp_gov", "mcp_gov/servers/client_config.json", "mcp_manifest"),
+    ("mcp_gov", "mcp_gov/connectors/poisoned_skill/SKILL.md", "connector_scan"),
+    ("mcp_gov", "mcp_gov/connectors/exfil_tool.py", "connector_scan"),
+    ("gcp_sre", "gcp_sre/state.tfstate.json", "gcp_tf"),
+    ("gcp_sre", "gcp_sre/kafka_broker.log", "sre_logs"),
+    ("gcp_sre", "gcp_sre/splunk_export.json", "sre_logs"),
+    ("gcp_sre", "gcp_sre/node_app.log", "sre_logs"),
     ("swe", "swe/sample_repo", "secret_scan"),
     ("swe", "swe/queries.sql", "sql_lint"),
 ])
@@ -35,7 +43,7 @@ def test_detect_unknown(fixtures):
 
 
 def test_pack_tools_shape():
-    assert set(PACK_TOOLS) == {"swe", "devops", "soc", "iam"}
+    assert set(PACK_TOOLS) == {"swe", "devops", "soc", "iam", "mcp_gov", "gcp_sre"}
     assert all(callable(fn) for tools in PACK_TOOLS.values() for fn in tools.values())
 
 
@@ -102,3 +110,47 @@ def test_cli_opt_passthrough_for_sigma_and_drift(fixtures, tmp_path, capsys):
     state = fixtures / "devops" / "state"
     assert main(["devops", str(state / "baseline.json"), "--tool", "drift", "--opt",
                  f"compare_to={state / 'current.json'}", "--fail-on", "high"]) == 2
+
+
+def test_run_pack_mcp_gov_directory(fixtures):
+    reports = run_pack("mcp_gov", fixtures / "mcp_gov")
+    got = {(r.tool, Path(r.input).name) for r in reports}
+    assert {("mcp_manifest", "risky_server.json"), ("mcp_manifest", "clean_server.json"),
+            ("connector_scan", "SKILL.md"), ("connector_scan", "exfil_tool.py")} <= got
+    assert not any(r.tool == "connector_scan" and Path(r.input).name.endswith(".json") for r in reports)
+
+
+def test_run_pack_gcp_sre_directory_runs_companion_node_trace(fixtures):
+    reports = run_pack("gcp_sre", fixtures / "gcp_sre")
+    got = sorted((r.tool, Path(r.input).name) for r in reports)
+    assert got == [("gcp_tf", "state.tfstate.json"), ("node_trace", "node_app.log"), ("node_trace", "splunk_export.json"),
+                   ("sre_logs", "kafka_broker.log"), ("sre_logs", "node_app.log"), ("sre_logs", "splunk_export.json")]
+    only = run_pack("gcp_sre", fixtures / "gcp_sre", tool="node_trace")
+    assert [(r.tool, Path(r.input).name) for r in only] == [  # explicit --tool: every log-kind file, no companions
+        ("node_trace", "kafka_broker.log"), ("node_trace", "node_app.log"), ("node_trace", "splunk_export.json")]
+    assert only[0].findings == []
+    single = run_pack("gcp_sre", fixtures / "gcp_sre" / "kafka_broker.log")
+    assert [r.tool for r in single] == ["sre_logs"]
+
+
+def test_run_pack_directory_reports_unparseable_gcp_and_mcp_files(tmp_path):
+    (tmp_path / "broken.tfstate.json").write_text("{not json")
+    (tmp_path / "plan.json").write_text('{"planned_values": {}}')
+    reports = run_pack("gcp_sre", tmp_path)
+    assert [r.tool for r in reports] == ["gcp_tf"]  # broken JSON is not detected as terraform; empty plan analyzes cleanly
+    assert reports[0].findings == []
+
+
+def test_cli_new_packs(fixtures, tmp_path, capsys):
+    assert main(["mcp_gov", str(fixtures / "mcp_gov" / "servers" / "risky_server.json"), "--fail-on", "high"]) == 2
+    capsys.readouterr()
+    assert main(["mcp_gov", str(fixtures / "mcp_gov" / "servers" / "clean_server.json"), "--fail-on", "low"]) == 0
+    capsys.readouterr()
+    assert main(["mcp_gov", str(fixtures / "mcp_gov" / "servers" / "clean_server.json"), "--opt",
+                 "allowed_scopes=docs.list", "--fail-on", "high"]) == 2
+    capsys.readouterr()
+    out = tmp_path / "gcp.sarif"
+    assert main(["gcp_sre", str(fixtures / "gcp_sre" / "state.tfstate.json"), "--format", "sarif", "--out", str(out)]) == 0
+    assert json.loads(out.read_text())["version"] == "2.1.0"
+    assert main(["gcp_sre", str(fixtures / "gcp_sre" / "kafka_broker.log"), "--opt", "lag_threshold=99999999", "--format", "json"]) == 0
+    assert "KAFKA-CONSUMER-LAG" not in capsys.readouterr().out
