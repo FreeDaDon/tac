@@ -63,8 +63,15 @@ decision first, via [Jev](https://typesafe.ai) (TypeSafe AI's System One API) �
 `{model, state, questions}` → `{choice, probabilities, confidence}` round trip instead of a full
 agent subprocess. A low-confidence or failed Jev call always falls back to the existing full-agent
 command unchanged; Jev never gates a pass/fail decision, a security check, or a ship/merge step.
-See [`adws/adw_modules/jev.py`](adws/adw_modules/jev.py) and principle 17 in
-[00-principles](docs/playbook/00-principles.md).
+
+The same `triage_findings()` helper also re-orders findings for `/redteam` and `/review`, worst
+first: `/redteam`'s deterministic scanner findings are sorted by severity before they're written to
+the agent's input file, so the agent reads critical/high findings before medium/low; `/review` has
+no equivalent pre-existing input, so its own `review_issues` output is sorted (blocker → tech_debt
+→ skippable) before it's persisted, so the dashboard and gate detail show the worst issues first.
+In both cases this only changes read order — it never adds, drops, or reclassifies a finding, and
+never touches a gate's pass/fail verdict. See [`adws/adw_modules/jev.py`](adws/adw_modules/jev.py)
+and principle 17 in [00-principles](docs/playbook/00-principles.md).
 
 ```bash
 # .env
