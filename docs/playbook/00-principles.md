@@ -127,5 +127,9 @@ was overkill (`/classify_issue`): a schema-validated choice + confidence instead
 "Return ONLY ..." string. It is never security-critical and never ship-blocking — it cannot gate a
 test, a red-team finding, or a merge, and a low-confidence or failed Jev call always falls back to
 the full agent classifier rather than guessing. The mock backend (offline, deterministic, zero
-cost) is the default; the live backend is opt-in only via `JEV_BACKEND=live` plus
-`OPENROUTER_API_KEY`, and a malformed live response is a raised error, never a silent pass-through.
+cost) is the default; the live backend is opt-in only via `JEV_BACKEND=typesafe`/`openrouter`/`live`
+plus the matching API key, and a malformed live response is a raised error, never a silent
+pass-through. `triage_findings()` extends this to `/redteam` (re-orders the deterministic scanner
+findings before they reach the agent's input file) and `/review` (re-orders the agent's own
+`review_issues` output before it's persisted) — in both cases it only changes read order, never
+which findings exist, their severity, or a gate verdict.
