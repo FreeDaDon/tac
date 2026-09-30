@@ -232,19 +232,38 @@ class JevClient:
 
 
 # ----------------------------------------------------------------------------- advisory findings triage
-def triage_findings(findings: list, weight: dict[str, float] | None = None) -> list[tuple]:
-    """Advisory re-ordering of deterministic findings for a human/agent to read first.
+# Covers both severity vocabularies in the codebase: core.common.Finding / RedTeamFinding use
+# critical/high/medium/low/info; ReviewIssue uses blocker/tech_debt/skippable. One shared weight
+# table (the key sets don't overlap) so triage_findings() works for either without a caller-side
+# translation table.
+_DEFAULT_SEVERITY_WEIGHT: dict[str, float] = {
+    "critical": 1.0, "blocker": 1.0,
+    "high": 0.8,
+    "medium": 0.5, "tech_debt": 0.4,
+    "low": 0.25, "skippable": 0.1,
+    "info": 0.05,
+}
+
+
+def triage_findings(
+    findings: list,
+    weight: dict[str, float] | None = None,
+    severity_of=lambda f: f.severity,
+) -> list[tuple]:
+    """Advisory re-ordering of findings for a human/agent to read first.
 
     Never mutates severity, never drops a finding, never touches gate verdicts -- this only
-    changes display order for /review and /redteam. Skippable and safe to no-op: on any error
-    it returns findings in their original order with triage_score=None.
+    changes display/read order for /review and /redteam. Skippable and safe to no-op: on any
+    error it returns findings in their original order with triage_score=None.
+
+    `severity_of` lets callers point at a differently-named field (e.g. ReviewIssue's
+    `issue_severity` instead of the default `.severity`).
 
     Returns a list of (finding, triage_score) pairs, highest score first.
     """
-    default_weight = {"critical": 1.0, "high": 0.8, "medium": 0.5, "low": 0.25, "info": 0.05}
-    weight = weight or default_weight
+    weight = weight or _DEFAULT_SEVERITY_WEIGHT
     try:
-        scored = [(f, round(weight.get(f.severity, 0.0), 4)) for f in findings]
+        scored = [(f, round(weight.get(severity_of(f), 0.0), 4)) for f in findings]
         return sorted(scored, key=lambda pair: pair[1], reverse=True)
     except Exception:  # noqa: BLE001 - advisory triage must never break /review or /redteam
         return [(f, None) for f in findings]

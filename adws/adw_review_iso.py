@@ -18,6 +18,7 @@ from adws.adw_modules.cli import main_wrapper, require_state
 from adws.adw_modules.data_types import AgentRequest, GateResult, ReviewResult
 from adws.adw_modules.gates import tac_config
 from adws.adw_modules.git_ops import branch_diff
+from adws.adw_modules.jev import triage_findings
 from adws.adw_modules.state import ADWState
 from adws.adw_modules.utils import parse_json
 from adws.adw_modules.worktree_ops import validate_worktree
@@ -58,6 +59,9 @@ def run(adw_id: str, skip_resolution: bool = False) -> bool:
             except ops.WorkflowError as exc:
                 gate = GateResult(name="spec_review", status="failed", detail=str(exc))
                 break
+            # Advisory only: re-orders blocker/tech_debt/skippable for the persisted JSON and
+            # dashboard (worst first). Never changes which issues exist or the blocker gate verdict.
+            result.review_issues = [i for i, _ in triage_findings(result.review_issues, severity_of=lambda i: i.issue_severity)]
             (state.dir / f"review_{attempt}.json").write_text(result.model_dump_json(indent=2))
             if not result.blockers:
                 break

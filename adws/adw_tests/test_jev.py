@@ -180,3 +180,31 @@ def test_triage_findings_never_drops_or_raises_on_bad_input() -> None:
     ordered = triage_findings([object()])  # malformed input: no .severity attribute
     assert len(ordered) == 1
     assert ordered[0][1] is None
+
+
+def test_triage_findings_supports_review_issue_severity_vocabulary() -> None:
+    """ReviewIssue uses blocker/tech_debt/skippable and .issue_severity, not .severity --
+    triage_findings must support it via severity_of without a caller-side translation table."""
+    from adws.adw_modules.data_types import ReviewIssue
+    from adws.adw_modules.jev import triage_findings
+
+    issues = [
+        ReviewIssue(review_issue_number=1, issue_description="d1", issue_resolution="r1", issue_severity="skippable"),
+        ReviewIssue(review_issue_number=2, issue_description="d2", issue_resolution="r2", issue_severity="blocker"),
+        ReviewIssue(review_issue_number=3, issue_description="d3", issue_resolution="r3", issue_severity="tech_debt"),
+    ]
+    ordered = triage_findings(issues, severity_of=lambda i: i.issue_severity)
+    assert [i.review_issue_number for i, _ in ordered] == [2, 3, 1]
+
+
+def test_redteam_scanner_findings_are_triaged_before_agent_input() -> None:
+    from adws.adw_modules.data_types import RedTeamFinding
+    from adws.adw_modules.jev import triage_findings
+
+    findings = [
+        RedTeamFinding(title="low", severity="low", source="scanner"),
+        RedTeamFinding(title="critical", severity="critical", source="scanner"),
+        RedTeamFinding(title="medium", severity="medium", source="scanner"),
+    ]
+    ordered = [f for f, _ in triage_findings(findings)]
+    assert [f.title for f in ordered] == ["critical", "medium", "low"]

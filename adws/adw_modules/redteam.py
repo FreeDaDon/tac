@@ -15,6 +15,7 @@ from typing import Literal
 from .agent import execute_template, write_input_file
 from .data_types import AgentRequest, GateResult, GateStatus, RedTeamFinding, RedTeamResult
 from .git_ops import branch_diff, changed_files
+from .jev import triage_findings
 from .security import safe_subprocess_env
 from .utils import parse_json
 
@@ -85,6 +86,9 @@ def run_redteam(adw_id: str, working_dir: str, spec_file: str, use_agent: bool =
     diff = branch_diff(working_dir)
     files = changed_files(working_dir)
     scanner = detect_test_tampering(diff) + ruff_security_scan(working_dir, files)
+    # Advisory only: re-orders what the agent reads first, never adds/drops/reclassifies a
+    # finding. Falls back to original order if Jev triage errors (jev.triage_findings no-ops safely).
+    scanner = [f for f, _ in triage_findings(scanner)]
     result = RedTeamResult(findings=list(scanner), summary="")
 
     if use_agent and diff.strip():
