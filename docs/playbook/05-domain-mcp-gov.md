@@ -52,7 +52,7 @@ uv run adws/adw_domain_iso.py --pack mcp_gov --input server.json --no-agent     
 
 1. **Intake.** Copy `specs/templates/ai_connector_review.md`. Record the source, exact version, target audience and data classification.
 2. **Assess.** Run the pack on the connector. Read the manifest and every tool description yourself. The scanner finds patterns, not intent.
-3. **Configure.** Fix the manifest until only approved scopes and groups remain. Keep the connector definition in infrastructure as code, one module for dev, staging and production.
+3. **Configure.** Fix the manifest until only approved scopes and groups remain. Keep the connector definition in infrastructure as code, one module for dev, staging and production — `infra/terraform/modules/mcp-connector` does exactly this: it renders the manifest and a registration record, rejects wildcard scopes, plaintext transport and broad audiences at `terraform plan`, and requires a review ticket outside `dev`.
 4. **Authorize.** Security, IAM and the platform owner sign the release section. Only then is the connector registered.
 5. **Hand off.** Record the owner, audit log location and the events that trigger a re-review (new version, new tool, new scope).
 

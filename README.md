@@ -44,6 +44,7 @@ scripts/start.sh                                         # dashboard at http://1
 | `agent/` | runtime: run state and events, KPIs (`agentic_kpis.md`), lessons memory, reports |
 | `specs/` | plan templates in `specs/templates/` (feature, bug, chore, patch, infra_change, incident_triage, access_review, ai_connector_review, gcp_sre_incident) and generated plans |
 | `docs/playbook/` | the playbook: start at [00-principles](docs/playbook/00-principles.md) |
+| `infra/terraform/` | optional IaC: the `mcp-connector` module renders an MCP server manifest in the exact shape `core/mcp_gov/manifest.py` scans, with its own variable validations mirroring the scanner's rules (wildcard scopes, plaintext transport, broad audience) so a bad connector config fails at `terraform plan` before it ever reaches the scanner. Never talks to a real platform — only the `local` provider, rendering JSON files to disk. See [`infra/terraform/README.md`](infra/terraform/README.md). |
 
 ## Guarantees (enforced in code, covered by tests)
 

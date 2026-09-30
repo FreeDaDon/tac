@@ -63,6 +63,17 @@ trees/<adw_id>/                    git worktree + .ports.env (ports, per-run DB 
 - **No secrets in worktrees**: tac-7 copied `.env` into every worktree. This toolkit passes an allowlisted environment to subprocesses instead (`security.safe_subprocess_env`).
 - **Trusted config comes from the main checkout**: slash-command templates and gate commands are read from the main checkout. An agent that edits them inside its worktree cannot change its own prompts or weaken its own gates.
 
+## Policy as code (optional)
+
+`infra/terraform/modules/mcp-connector` renders an MCP server manifest in the exact JSON shape
+`core/mcp_gov/manifest.py` scans, with variable validations and a `terraform_data.guard`
+precondition block mirroring the scanner's own rules (wildcard/admin scopes, plaintext transport,
+broad audience, missing review ticket outside `dev`). A bad connector config fails at
+`terraform plan` before a human ever runs the scanner — and the scanner still runs as an
+independent second gate afterward, so a bypass of one layer doesn't silently pass. It never
+registers, enables or talks to a real connector; the only provider is `hashicorp/local`, rendering
+JSON files to disk. See [`infra/terraform/README.md`](../../infra/terraform/README.md).
+
 ## Extending
 
 - **New workflow phase**: write `run(adw_id) -> bool` in `adws/adw_<name>_iso.py` and wrap the body in `workflow_ops.phase(...)`. Record a `GateResult` and add it to `PHASES` in `adw_sdlc_iso.py`.
