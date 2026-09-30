@@ -21,7 +21,7 @@ A separate agent with a hostile persona audits the diff. It gets the determinist
 - **ruff `S` rules** on changed Python files.
 - **Secret scan.**
 
-Any critical or high finding fails the gate. The agent cannot suppress scanner findings, because they are merged in code.
+Any critical or high finding fails the gate. The agent cannot suppress scanner findings, because they are merged in code. Before the agent reads them, `jev.triage_findings()` sorts them by severity (worst first) — advisory only, it never adds, drops, or reclassifies a finding.
 
 **Why:** the builder agent's incentive is "make the tests pass", and the cheapest way to do that is to weaken the tests. A second agent with the opposite incentive, plus diff-level checks, catches that.
 
