@@ -14,13 +14,20 @@ from pydantic import BaseModel, Field
 
 from . import github, telemetry
 from .agent import execute_template, write_input_file
+from .budget import record_usage
 from .data_types import AgentRequest, IssueClass, IssuePayload
 from .git_ops import commit_all, has_remote, push_branch
+from .jev import JevClient, JevError, cost_of
 from .memory import format_for_prompt, relevant
 from .security import SecurityError, fence_untrusted, resolve_inside, sanitize_untrusted, validate_branch_name
 from .state import ADWState
+from .utils import extract_json_text
 
 LOCAL_ISSUE_NUMBER = "0"
+
+# Below this Jev confidence, classify_issue falls back to the full agent classifier rather than
+# trusting a low-confidence advisory answer. Reviewable here, not buried in the call site.
+JEV_CLASSIFY_CONFIDENCE_THRESHOLD = 0.7
 
 
 class WorkflowError(RuntimeError):
@@ -94,7 +101,30 @@ def _run(state: ADWState, agent_name: str, command: str, args: list[str], cwd: s
     return resp.output.strip()
 
 
+def _jev_classify_issue(state: ADWState, issue_file: str) -> IssueClass | None:
+    """Advisory fast path: a typed Jev decision instead of a full agent subprocess. Returns
+    None (never raises) on anything that isn't a confident, valid classification, so the
+    caller always has a clean fallback to the full agent classifier."""
+    try:
+        payload = IssuePayload.model_validate_json(extract_json_text(Path(issue_file).read_text()))
+        answer = JevClient().classify_issue(payload.title, payload.body, payload.labels)
+    except (JevError, ValueError, OSError):
+        return None
+    record_usage(state.adw_id, cost_of(answer), command=f"/classify_issue:jev:{answer.backend}")
+    telemetry.emit(state.adw_id, "agent_call", phase="plan", message="jev classify_issue",
+                   model=f"jev:{answer.backend}", cost_usd=cost_of(answer).cost_usd,
+                   choice=answer.choice, confidence=answer.confidence)
+    if answer.confidence < JEV_CLASSIFY_CONFIDENCE_THRESHOLD:
+        return None
+    if answer.choice not in get_args(IssueClass):
+        return None  # choice was "0" (not actionable) or otherwise outside the workflow's classes
+    return answer.choice  # type: ignore[return-value]
+
+
 def classify_issue(state: ADWState, issue_file: str) -> IssueClass:
+    jev_result = _jev_classify_issue(state, issue_file)
+    if jev_result is not None:
+        return jev_result
     out = _run(state, "issue_classifier", "/classify_issue", [issue_file], cache=True)
     match = re.search(r"(/feature|/bug|/chore|/patch)\b", out)
     if not match or match.group(1) not in get_args(IssueClass):

@@ -36,7 +36,7 @@ scripts/start.sh                                         # dashboard at http://1
 | Path | What it is |
 |---|---|
 | `adws/` | AI Developer Workflows: `adw_{plan,build,test,review,redteam,document,ship}_iso.py`, the composites `adw_sdlc_iso.py` and `adw_sdlc_zte_iso.py`, and `adw_domain_iso.py` |
-| `adws/adw_modules/` | state, agent runner, model router, budget, cache, security, gates, repair, redteam, memory, KPIs, telemetry, git, GitHub, worktree |
+| `adws/adw_modules/` | state, agent runner, model router, budget, cache, security, gates, repair, redteam, memory, KPIs, telemetry, git, GitHub, worktree, Jev typed decisions |
 | `adws/adw_triggers/` | HMAC-verified webhook, cron poller, Todone `tasks.md` queue |
 | `.claude/` | slash-command templates (the prompt layer), fail-closed hooks, hardened `settings.json` |
 | `core/` | deterministic domain tools, no LLM calls: security, devops, soc, iam, mcp_gov, gcp_sre, export (md/json/SARIF), fixtures |
@@ -55,6 +55,27 @@ scripts/start.sh                                         # dashboard at http://1
 - **Gates judge from the main checkout.** Gate commands and templates can't be weakened by the agent being judged.
 - **Zero-Touch shipping is locked.** It requires an operator flag, a domain policy that allows it, all eight gates green (E2E not skipped), budget left, and green PR checks. The merge happens server-side, never in your checkout.
 - **Budgets.** Cost per run is tracked from Claude Code's own accounting. Heavy commands are downgraded at 80% of the budget, and agent calls stop at 100%.
+
+## Jev typed decisions (advisory only)
+
+Mechanical-class classification calls (`/classify_issue`) try a cheap, schema-validated typed
+decision first, via [Jev](https://typesafe.ai) (TypeSafe AI's System One API) — a single
+`{model, state, questions}` → `{choice, probabilities, confidence}` round trip instead of a full
+agent subprocess. A low-confidence or failed Jev call always falls back to the existing full-agent
+command unchanged; Jev never gates a pass/fail decision, a security check, or a ship/merge step.
+See [`adws/adw_modules/jev.py`](adws/adw_modules/jev.py) and principle 17 in
+[00-principles](docs/playbook/00-principles.md).
+
+```bash
+# .env
+JEV_BACKEND=mock        # default: offline, deterministic, zero cost, no network
+JEV_BACKEND=typesafe    # TypeSafe's own endpoint — needs TYPESAFE_API_KEY (console.typesafe.ai/keys)
+JEV_BACKEND=openrouter  # OpenRouter's decision endpoint — needs OPENROUTER_API_KEY
+JEV_BACKEND=live        # alias: prefers TYPESAFE_API_KEY, then OPENROUTER_API_KEY, whichever is set
+```
+
+If a live provider ever has an outage or a bad key, set `JEV_BACKEND=mock` and every workflow that
+uses Jev keeps working unchanged — it was always advisory, never load-bearing.
 
 ## Playbook
 

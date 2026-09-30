@@ -120,3 +120,12 @@ never cached.
 Agents never apply infrastructure, change access, run containment, or push to main. Domain packs ship
 as `pr_only` (devops, iam, mcp_gov, gcp_sre) or `report_only` (soc). Only the swe pack can reach ZTE, and only through all
 locks (`adws/adw_ship_iso.py`).
+
+### 17. Jev typed decisions are advisory and mechanical-classification only
+`adws/adw_modules/jev.py` replaces a full agent subprocess for fixed-option judgments where one
+was overkill (`/classify_issue`): a schema-validated choice + confidence instead of parsing a
+"Return ONLY ..." string. It is never security-critical and never ship-blocking — it cannot gate a
+test, a red-team finding, or a merge, and a low-confidence or failed Jev call always falls back to
+the full agent classifier rather than guessing. The mock backend (offline, deterministic, zero
+cost) is the default; the live backend is opt-in only via `JEV_BACKEND=live` plus
+`OPENROUTER_API_KEY`, and a malformed live response is a raised error, never a silent pass-through.
