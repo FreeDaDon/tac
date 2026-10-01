@@ -8,6 +8,7 @@ import pytest
 from conftest import RUN_A, RUN_B, RUN_CORRUPT
 from dashboard.kpis import parse_tables
 from dashboard.lessons import parse_lesson
+from dashboard.main import create_app
 from fastapi.testclient import TestClient
 from starlette.websockets import WebSocketDisconnect
 
@@ -152,6 +153,22 @@ def test_worktrees(client: TestClient) -> None:
     t = trees[0]
     assert t["adw_id"] == RUN_A and t["backend_port"] == 9142 and t["frontend_port"] == 9192
     assert isinstance(t["backend_live"], bool) and t["has_run"] is True
+
+
+def test_version_normal(client: TestClient) -> None:
+    r = client.get("/api/version")
+    assert r.status_code == 200
+    assert r.json() == {"name": "tac", "version": "9.9.9-test"}
+
+
+def test_version_missing_pyproject(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.delenv("TAC_DASHBOARD_TOKEN", raising=False)
+    monkeypatch.delenv("TAC_DASHBOARD_HOST", raising=False)
+    app = create_app(root=tmp_path, db_path=tmp_path / "dashboard.db")
+    with TestClient(app, base_url="http://localhost") as c:
+        r = c.get("/api/version")
+        assert r.status_code == 200
+        assert r.json() == {"name": "tac", "version": "unknown"}
 
 
 def test_lessons(client: TestClient, root: Path) -> None:

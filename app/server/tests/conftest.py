@@ -98,6 +98,7 @@ def root(tmp_path: Path) -> Path:
     tree.mkdir(parents=True)
     (tree / ".ports.env").write_text("BACKEND_PORT=9142\nFRONTEND_PORT=9192\nTAC_ADW_ID=a1b2c3d4\n")
     (tmp_path / "trees" / "junk").mkdir()
+    (tmp_path / "pyproject.toml").write_text('[project]\nname = "tac-toolkit"\nversion = "9.9.9-test"\n')
     with sqlite3.connect(tmp_path / "agent" / "cache.db") as c:
         c.execute("CREATE TABLE cache (key TEXT PRIMARY KEY, command TEXT, response TEXT, created REAL, hits INTEGER)")
         c.execute("INSERT INTO cache VALUES ('k1', '/review', '{}', 0, 3)")

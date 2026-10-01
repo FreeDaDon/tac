@@ -1,5 +1,5 @@
 import type {
-  Budget, CacheStats, DashEvent, Health, Kpis, Lesson, RunDetail, RunSummary, Worktree,
+  Budget, CacheStats, DashEvent, Health, Kpis, Lesson, RunDetail, RunSummary, Version, Worktree,
 } from "./types";
 
 const TOKEN_KEY = "tac-dashboard-token";
@@ -52,4 +52,5 @@ export const api = {
   worktrees: () => get<Worktree[]>("/api/worktrees"),
   lessons: () => get<Lesson[]>("/api/lessons"),
   cache: () => get<CacheStats>("/api/cache"),
+  version: () => get<Version>("/api/version"),
 };
