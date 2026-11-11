@@ -21,6 +21,7 @@ from __future__ import annotations
 
 import json
 import os
+import re
 import urllib.error
 import urllib.request
 from typing import Literal
@@ -132,8 +133,14 @@ def _issue_text(title: str, body: str) -> str:
     return text
 
 
+_KEYWORD_RES: dict[str, list[re.Pattern[str]]] = {
+    option: [re.compile(rf"(?<![\w]){re.escape(kw)}(?![\w])") for kw in keywords]
+    for option, keywords in _CATEGORY_KEYWORDS.items()
+}
+
+
 def _keyword_scores(text: str, labels: list[str]) -> dict[str, float]:
-    scores = {option: float(sum(1 for kw in keywords if kw in text)) for option, keywords in _CATEGORY_KEYWORDS.items()}
+    scores = {option: float(sum(1 for kw in pats if kw.search(text))) for option, pats in _KEYWORD_RES.items()}
     for label in labels:
         norm = label.strip().lower()
         for option, keywords in _CATEGORY_KEYWORDS.items():

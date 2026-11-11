@@ -145,6 +145,7 @@ class GateResult(BaseModel):
     detail: str = ""
     duration_s: float = 0.0
     required_for_zte: bool = True
+    head_sha: str = ""
 
 
 class GateReport(BaseModel):

@@ -11,7 +11,7 @@ from collections.abc import Iterator
 from contextlib import contextmanager
 from pathlib import Path
 
-from .security import safe_subprocess_env
+from .security import untrusted_code_env
 
 START_TIMEOUT_S = 90
 
@@ -28,10 +28,9 @@ def _healthy(url: str) -> bool:
 def running_app(worktree: str | Path, port: int, log_path: Path) -> Iterator[str]:
     """Build the client (if present) and serve the dashboard app from the worktree on 127.0.0.1:port."""
     wt = Path(worktree)
-    env = safe_subprocess_env()
-    env.pop("ANTHROPIC_API_KEY", None)
+    env = untrusted_code_env()
     env.update({"TAC_DASHBOARD_HOST": "127.0.0.1", "TAC_DASHBOARD_PORT": str(port), "TAC_PROJECT_ROOT": str(wt),
-                "TAC_DASHBOARD_DB": str(wt / "agent_data" / "dashboard.db"), "VIRTUAL_ENV": ""})
+                "TAC_DASHBOARD_DB": str(wt / "agent_data" / "dashboard.db")})
     log_path.parent.mkdir(parents=True, exist_ok=True)
     client = wt / "app" / "client"
     with open(log_path, "a") as log:

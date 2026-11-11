@@ -1,6 +1,9 @@
 #!/usr/bin/env -S uv run
-"""Full isolated SDLC: plan -> build -> test -> review -> redteam -> document. Stops at the first
+"""Full isolated SDLC: plan -> build -> test -> review -> document -> redteam. Stops at the first
 failed phase (tac-7 carried on after failed tests). Never merges; see adw_sdlc_zte_iso.py.
+
+Every gate verdict is bound to the commit it judged. When review patches change code after the
+tests ran, test and review re-run until no verdict is stale. Red team runs last, on the final diff.
 
 Usage:
   uv run adws/adw_sdlc_iso.py --issue 42 [--model-set heavy] [--skip-e2e]
@@ -16,9 +19,34 @@ from collections.abc import Callable
 from adws import adw_build_iso, adw_document_iso, adw_plan_iso, adw_redteam_iso, adw_review_iso, adw_test_iso
 from adws.adw_modules import telemetry
 from adws.adw_modules.cli import main_wrapper
+from adws.adw_modules.gates import TEST_GATES, stale_gates
 from adws.adw_modules.state import ADWState
 
-PHASES = ("plan", "build", "test", "review", "redteam", "document")
+PHASES = ("plan", "build", "test", "review", "document", "redteam")
+MAX_REVERIFY_ROUNDS = 2
+
+
+def reverify(adw_id: str, skip_e2e: bool) -> bool:
+    """Re-run test and review until every verdict judges the current commit."""
+    for _ in range(MAX_REVERIFY_ROUNDS):
+        state = ADWState.load(adw_id)
+        if state is None:
+            return False
+        wt = state.working_dir()
+        report = state.gate_report()
+        if stale_gates(report, wt, TEST_GATES):
+            telemetry.emit(adw_id, "pipeline", message="code changed after tests; re-running test phase")
+            if not adw_test_iso.run(adw_id, skip_e2e=skip_e2e):
+                return False
+            continue
+        if stale_gates(report, wt, ["spec_review"]):
+            telemetry.emit(adw_id, "pipeline", message="code changed after review; re-running review phase")
+            if not adw_review_iso.run(adw_id):
+                return False
+            continue
+        return True
+    state = ADWState.load(adw_id)
+    return state is not None and not stale_gates(state.gate_report(), state.working_dir(), [*TEST_GATES, "spec_review"])
 
 
 def run_pipeline(args: argparse.Namespace) -> tuple[bool, str]:
@@ -31,7 +59,7 @@ def run_pipeline(args: argparse.Namespace) -> tuple[bool, str]:
     steps: dict[str, Callable[[], bool]] = {
         "build": lambda: adw_build_iso.run(adw_id),
         "test": lambda: adw_test_iso.run(adw_id, skip_e2e=args.skip_e2e),
-        "review": lambda: adw_review_iso.run(adw_id),
+        "review": lambda: adw_review_iso.run(adw_id) and reverify(adw_id, args.skip_e2e),
         "redteam": lambda: adw_redteam_iso.run(adw_id),
         "document": lambda: adw_document_iso.run(adw_id),
     }

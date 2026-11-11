@@ -74,11 +74,12 @@ def test_ship_blocks_non_swe_domain_and_skipped_e2e(tac_root: Path, monkeypatch:
 
 def test_ship_dry_run_passes_when_all_locks_open(tac_root: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     from adws.adw_modules.data_types import GateResult
+    from adws.adw_modules.gates import stamp
 
     monkeypatch.setenv("TAC_ZTE_ENABLED", "1")
     s = ADWState("ab12cd34", domain="swe")
     for g in ("lint", "types", "unit", "client", "e2e", "spec_review", "redteam", "secret_scan"):
-        s.gate_report().upsert(GateResult(name=g, status="passed"))
+        s.gate_report().upsert(stamp(GateResult(name=g, status="passed"), tac_root))
     s.save()
     assert adw_ship_iso.ship_blockers(s, check_remote=False) == []
 

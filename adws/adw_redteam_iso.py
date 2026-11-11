@@ -12,7 +12,7 @@ import argparse
 
 from adws.adw_modules import workflow_ops as ops
 from adws.adw_modules.cli import main_wrapper, require_state
-from adws.adw_modules.gates import run_secret_scan
+from adws.adw_modules.gates import run_secret_scan, stamp
 from adws.adw_modules.redteam import run_redteam
 from adws.adw_modules.worktree_ops import validate_worktree
 
@@ -31,7 +31,7 @@ def run(adw_id: str, use_agent: bool = True) -> bool:
         (state.dir / "redteam.json").write_text(result.model_dump_json(indent=2))
         secrets = run_secret_scan(state.working_dir())
         state.reload()
-        state.gate_report().upsert(gate)
+        state.gate_report().upsert(stamp(gate, state.working_dir()))
         state.gate_report().upsert(secrets)
         passed = gate.status == "passed" and secrets.status == "passed"
         if not passed:

@@ -45,9 +45,14 @@ def _review(req: AgentRequest, _: str) -> str:
 
 
 def _e2e(req: AgentRequest, _: str) -> str:
+    from .utils import run_dir
+
     name = Path(req.args[2]).stem if len(req.args) > 2 else "e2e"
+    shot = run_dir(req.adw_id) / req.agent_name / "img" / name / "01_initial_state.png"
+    shot.parent.mkdir(parents=True, exist_ok=True)
+    shot.write_bytes(b"\x89PNG\r\n\x1a\n mock screenshot")
     return json.dumps({"test_name": name, "status": "passed", "test_path": req.args[2] if len(req.args) > 2 else "",
-                       "screenshots": [], "error": None})
+                       "screenshots": [str(shot)], "error": None})
 
 
 def _domain(req: AgentRequest, _: str) -> str:

@@ -6,6 +6,7 @@ Source of truth: agent/kpis.jsonl (one row per ADW run, upserted). agent/agentic
 
 from __future__ import annotations
 
+import fcntl
 import json
 from pathlib import Path
 
@@ -13,7 +14,7 @@ from pydantic import BaseModel
 
 from .data_types import utcnow
 from .state import ADWState
-from .utils import agent_dir
+from .utils import agent_dir, runs_dir
 
 STREAK_MAX_ATTEMPTS = 2
 ATTEMPT_WORKFLOWS = {"adw_plan_iso", "adw_patch_iso"}
@@ -63,11 +64,17 @@ def row_from_state(state: ADWState, diff: dict[str, int], plan_size: int, shippe
 
 
 def upsert(row: KPIRow) -> list[KPIRow]:
-    rows = [r for r in load_rows() if r.adw_id != row.adw_id] + [row]
+    """Read-modify-write under an exclusive lock: concurrent runs must not drop each other's rows."""
     path = _rows_path()
-    path.parent.mkdir(parents=True, exist_ok=True)
-    path.write_text("".join(r.model_dump_json() + "\n" for r in rows))
-    render(rows)
+    scratch = runs_dir()
+    scratch.mkdir(parents=True, exist_ok=True)
+    with open(scratch / ".kpis.lock", "w") as lock:
+        fcntl.flock(lock, fcntl.LOCK_EX)
+        rows = [r for r in load_rows() if r.adw_id != row.adw_id] + [row]
+        tmp = scratch / ".kpis.jsonl.tmp"
+        tmp.write_text("".join(r.model_dump_json() + "\n" for r in rows))
+        tmp.replace(path)
+        render(rows)
     return rows
 
 

@@ -88,9 +88,9 @@ def injection_signals(text: str) -> list[str]:
     return sorted({m.group(0).lower() for m in _INJECTION_RE.finditer(text or "")})
 
 
-def fence_untrusted(text: str, label: str = "input") -> str:
+def fence_untrusted(text: str, label: str = "input", max_chars: int = MAX_UNTRUSTED_CHARS) -> str:
     """Wrap untrusted content in an explicit data boundary for prompts."""
-    safe = sanitize_untrusted(text).replace("</untrusted", "&lt;/untrusted")
+    safe = sanitize_untrusted(text, max_chars).replace("</untrusted", "&lt;/untrusted")
     signals = injection_signals(text)
     warning = ""
     if signals:
@@ -132,17 +132,23 @@ SAFE_ENV_KEYS = {
     "LC_ALL",
     "PYTHONUNBUFFERED",
     "TAC_DASHBOARD_URL",
+    "TAC_DASHBOARD_TOKEN",  # read by .claude/hooks/post_tool_use.py to authenticate its event push
     "TAC_PROJECT_ROOT",
-    "JEV_BACKEND",
-    "OPENROUTER_API_KEY",  # Jev live backend via OpenRouter (adws/adw_modules/jev.py); unused with the mock backend
-    "TYPESAFE_API_KEY",    # Jev live backend via TypeSafe's own endpoint; unused with the mock backend
 }
+# Never handed to agent-written code (gates, the app under test): the dashboard token included.
+GATE_ENV_DROP = {"ANTHROPIC_API_KEY", "TAC_DASHBOARD_TOKEN"}
 
 
-def safe_subprocess_env(include_github: bool = False) -> dict[str, str]:
-    """Allowlisted environment for agent subprocesses; secrets are opt-in, never inherited wholesale."""
+def safe_subprocess_env() -> dict[str, str]:
+    """Allowlisted environment for subprocesses. GitHub and Jev credentials are never included:
+    the orchestrator does all pushing, PR and Jev calls in-process."""
     env = {k: v for k, v in os.environ.items() if k in SAFE_ENV_KEYS}
-    if include_github and os.getenv("GITHUB_PAT"):
-        env["GH_TOKEN"] = os.environ["GITHUB_PAT"]
     env.setdefault("PYTHONUNBUFFERED", "1")
+    return env
+
+
+def untrusted_code_env() -> dict[str, str]:
+    """Environment for running code the agent wrote (gates, app under test): no credentials at all."""
+    env = {k: v for k, v in safe_subprocess_env().items() if k not in GATE_ENV_DROP}
+    env["VIRTUAL_ENV"] = ""
     return env
