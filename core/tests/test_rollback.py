@@ -24,3 +24,14 @@ def test_fixture_rollback_plan(fixtures):
 def test_empty_plan():
     plan = build_rollback_plan({"resource_changes": []})
     assert plan.steps == [] and plan.preconditions
+
+
+def test_rollback_evidence_honors_sensitivity_and_redacts():
+    secret = "Zx8k" + "Q2mV9pL4wR7t"
+    plan = {"resource_changes": [{"address": "x.y", "type": "x", "mode": "managed", "change": {
+        "actions": ["update"], "before": {"opaque": "old-value", "cmd": "a"},
+        "after": {"opaque": "new-value", "cmd": f"PASSWORD={secret}"},
+        "before_sensitive": {"opaque": True}, "after_sensitive": {"opaque": True}}}]}
+    [step] = build_rollback_plan(plan).steps
+    dumped = step.model_dump_json()
+    assert "old-value" not in dumped and "new-value" not in dumped and secret not in dumped

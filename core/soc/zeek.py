@@ -9,7 +9,7 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
 
-from core.common import AnalysisReport, Finding
+from core.common import AnalysisReport, Finding, max_distinct_in_window
 
 TOOL = "zeek"
 DEFAULT_FIELDS = ("ts", "uid", "id.orig_h", "id.orig_p", "id.resp_h", "id.resp_p", "proto", "service", "duration",
@@ -66,14 +66,7 @@ def detect_port_scan(conns: list[Conn], min_targets: int = 20, window_seconds: f
         by_src[c.src].append(c)
     findings = []
     for src, items in sorted(by_src.items()):
-        start, best = 0, (0, 0, 0)
-        for end in range(len(items)):
-            while items[end].ts - items[start].ts > window_seconds:
-                start += 1
-            targets = {(c.dst, c.dport) for c in items[start : end + 1]}
-            if len(targets) > best[0]:
-                best = (len(targets), start, end)
-        count, s, e = best
+        count, s, e = max_distinct_in_window(items, lambda c: c.ts, lambda c: (c.dst, c.dport), window_seconds)
         if count < min_targets:
             continue
         window = items[s : e + 1]

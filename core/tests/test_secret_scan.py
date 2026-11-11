@@ -1,10 +1,13 @@
+import time
 from pathlib import Path
 
+from core.security.sanitize import snippet
 from core.security.secret_scan import (
     analyze_file,
     fingerprint,
     parse_allowlist,
     redact,
+    redact_secrets,
     scan_text,
     shannon_entropy,
 )
@@ -71,7 +74,7 @@ def test_sample_repo_detects_planted_secrets_without_allowlist(fixtures):
 
 
 def test_repo_allowlist_suppresses_fixtures(fixtures):
-    report = analyze_file(fixtures / "swe" / "sample_repo")
+    report = analyze_file(fixtures / "swe" / "sample_repo", allowlist=fixtures.parent.parent / ".secretsallow")
     assert report.findings == []
     assert report.metrics["suppressed"] == 2
     assert report.metrics["allowlist"].endswith(".secretsallow")
@@ -96,3 +99,61 @@ def test_skip_dirs_and_fingerprint_allowlist(tmp_path: Path):
 def test_clean_directory(tmp_path: Path):
     (tmp_path / "a.py").write_text("import os\nTOKEN = os.environ['TOKEN']\n")
     assert analyze_file(tmp_path, use_allowlist=False).findings == []
+
+
+def test_generic_rule_is_linear_on_a_hostile_one_megabyte_line(tmp_path: Path):
+    for name, line in (("dash.txt", "a-" * 500_000), ("kw.txt", "secret-" * 150_000),
+                       ("assign.txt", "token_x='" * 110_000)):
+        (tmp_path / name).write_text(line + "\n")
+    started = time.perf_counter()
+    report = analyze_file(tmp_path, use_allowlist=False, max_bytes=2_000_000)
+    assert time.perf_counter() - started < 2
+    assert report.metrics["files_scanned"] == 3
+
+
+def test_redaction_catches_unquoted_assignments():
+    value = "Zx8k" + "Q2mV9pL4wR7t"
+    for text in (f"PASSWORD={value}", f"export DB_PASSWORD={value}", f"api_key: {value}"):
+        assert value not in redact_secrets(text) and "[REDACTED:GENERIC]" in redact_secrets(text)
+        assert value not in snippet(text)
+    assert redact_secrets("TOKEN_KEY=tac-dashboard-token") == "TOKEN_KEY=tac-dashboard-token"
+    assert redact_secrets("password=changeme-please-123") == "password=changeme-please-123"
+    assert redact_secrets("color=Zx8kQ2mV9pL4wR7t") == "color=Zx8kQ2mV9pL4wR7t"
+
+
+def test_symlinked_files_outside_the_root_are_not_read(tmp_path: Path):
+    outside = tmp_path / "outside"
+    outside.mkdir()
+    (outside / "creds.py").write_text(f"k = '{FAKE_AWS}'\n")
+    root = tmp_path / "root"
+    root.mkdir()
+    (root / "link.py").symlink_to(outside / "creds.py")
+    (root / "linkdir").symlink_to(outside, target_is_directory=True)
+    report = analyze_file(root, use_allowlist=False)
+    assert report.findings == [] and report.metrics["files_scanned"] == 0
+
+
+def test_allowlist_is_only_read_at_the_scan_root(tmp_path: Path):
+    inner = tmp_path / "inner"
+    inner.mkdir()
+    (inner / "a.py").write_text(f"k = '{FAKE_AWS}'\n")
+    (tmp_path / ".secretsallow").write_text("inner/*\n")
+    report = analyze_file(inner)
+    assert [f.rule_id for f in report.findings] == ["SECRET-AWS-ACCESS-KEY"]
+    assert report.metrics["allowlist"] is None
+
+    trusted = analyze_file(inner, allowlist=tmp_path / ".secretsallow")
+    assert trusted.findings == [] and trusted.metrics["suppressed_by_glob"] == 1
+
+
+def test_wildcard_only_globs_are_ignored_and_suppression_is_counted(tmp_path: Path):
+    (tmp_path / "a.py").write_text(f"k = '{FAKE_AWS}'\n")
+    (tmp_path / ".secretsallow").write_text("*\n**/*\n")
+    report = analyze_file(tmp_path)
+    assert [f.rule_id for f in report.findings] == ["SECRET-AWS-ACCESS-KEY"]
+    assert report.metrics["allowlist_ignored_globs"] == ["*", "**/*"]
+
+    (tmp_path / ".secretsallow").write_text(f"fingerprint:{fingerprint(FAKE_AWS)}\n")
+    report = analyze_file(tmp_path)
+    assert report.findings == []
+    assert (report.metrics["suppressed_by_fingerprint"], report.metrics["suppressed_by_glob"]) == (1, 0)

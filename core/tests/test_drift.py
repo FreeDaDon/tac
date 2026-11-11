@@ -1,3 +1,5 @@
+import json
+
 from core.devops.drift import analyze_file, compare_states, diff_attributes, drift_from_plan, state_resources
 
 
@@ -54,3 +56,54 @@ def test_raw_tfstate_format():
     ]}
     assert sorted(state_resources(raw)) == ['aws_instance.web["b"]', "aws_instance.web[0]", "module.m.aws_sqs_queue.q"]
     assert compare_states(raw, raw) == []
+
+
+HUNTER = "hunter2" + "Zx8kQ2mV"
+
+
+def _dump(value) -> str:
+    return json.dumps(value)
+
+
+def test_secrets_never_reach_drift_evidence():
+    before = {"env": [{"name": "DB_PASS", "value": HUNTER}], "access_key": "AKIA" + "OLDOLDOLDOLD1234",
+              "api_key": "k1-" + HUNTER, "connection_string": f"postgres://app:{HUNTER}@db/x", "user_data": "a",
+              "command": "run"}
+    after = {"env": [{"name": "DB_PASS", "value": HUNTER + "x"}, {"name": "MODE", "value": "fast"}],
+             "access_key": "AKIA" + "NEWNEWNEWNEW1234", "api_key": "k2-" + HUNTER,
+             "connection_string": f"postgres://app:{HUNTER}x@db/x", "user_data": f"PASSWORD={HUNTER}",
+             "command": f"start --token={HUNTER}"}
+    attrs = diff_attributes(before, after)
+    assert {a["path"] for a in attrs} == {"env", "access_key", "api_key", "connection_string", "user_data", "command"}
+    assert HUNTER not in _dump(attrs) and "OLDOLDOLDOLD" not in _dump(attrs)
+    env = next(a for a in attrs if a["path"] == "env")
+    assert env["after"] == [{"name": "DB_PASS", "value": "<redacted>"}, {"name": "MODE", "value": "fast"}]
+
+
+def test_terraform_sensitivity_markers_are_honored(tmp_path):
+    plan = {"resource_drift": [{"address": "x.y", "type": "x", "change": {
+        "actions": ["update"], "before": {"settings": {"value": "plain-one"}}, "after": {"settings": {"value": "plain-two"}},
+        "before_sensitive": {}, "after_sensitive": {"settings": {"value": True}}}}]}
+    [finding] = drift_from_plan(plan)
+    assert finding.evidence["attributes"] == [{"path": "settings.value", "before": "<redacted>", "after": "<redacted>"}]
+
+    def raw(value):
+        return {"version": 4, "resources": [{"mode": "managed", "type": "x", "name": "y", "instances": [
+            {"attributes": {"opaque": value}, "sensitive_attributes": [[{"type": "get_attr", "value": "opaque"}]]}]}]}
+
+    def shown(value):
+        return {"values": {"root_module": {"resources": [{"address": "x.y", "type": "x", "values": {"opaque": value},
+                                                          "sensitive_values": {"opaque": True}}]}}}
+
+    for build in (raw, shown):
+        [finding] = compare_states(build("plain-one"), build("plain-two"))
+        assert "plain-" not in finding.model_dump_json()
+
+
+def test_security_keywords_match_whole_words():
+    assert drift_from_plan({"resource_drift": [{"address": "db", "type": "t", "change": {
+        "actions": ["update"], "before": {"engine_oracle_version": "19"}, "after": {"engine_oracle_version": "21"}}}]}
+    )[0].severity == "medium"
+    assert drift_from_plan({"resource_drift": [{"address": "db", "type": "t", "change": {
+        "actions": ["update"], "before": {"storage_encrypted": True}, "after": {"storage_encrypted": False}}}]}
+    )[0].severity == "high"

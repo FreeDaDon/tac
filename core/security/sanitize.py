@@ -18,16 +18,19 @@ TRUNCATION_MARKER = "…[truncated]"
 # Bidirectional overrides/isolates (Trojan Source, CVE-2021-42574) and invisible zero-width characters.
 BIDI_CHARS = frozenset("\u202a\u202b\u202c\u202d\u202e\u2066\u2067\u2068\u2069\u200e\u200f\u061c")
 ZERO_WIDTH_CHARS = frozenset("\u200b\u200c\u200d\u2060\ufeff")
+TAG_CHARS = range(0xE0000, 0xE0080)  # Unicode "tag" block: invisible ASCII smuggling
 _KEEP_WHITESPACE = frozenset("\n\t")
 _MD_SPECIAL = re.compile(r"([\\`*_\[\]|~])")
 _MD_LINE_START = re.compile(r"^(\s*)([#>+\-=])")
 
 
 def is_unsafe_char(char: str) -> bool:
-    """True for control (C0/C1/DEL), bidi and zero-width characters, except newline and tab."""
+    """True for control (C0/C1/DEL), invisible format (Cf: bidi, zero-width, soft hyphen) and tag characters,
+    except newline and tab."""
     if char in _KEEP_WHITESPACE:
         return False
-    return char in BIDI_CHARS or char in ZERO_WIDTH_CHARS or unicodedata.category(char) == "Cc"
+    return (char in BIDI_CHARS or char in ZERO_WIDTH_CHARS or ord(char) in TAG_CHARS
+            or unicodedata.category(char) in ("Cc", "Cf"))
 
 
 def strip_control_chars(text: str, keep_newlines: bool = True) -> str:
@@ -97,7 +100,7 @@ def scan_text(text: str, source: str = "") -> list[Finding]:
                 resource=source,
                 location=f"{source}:{line_no}",
                 evidence={"characters": sorted({name for _, name in hits}), "columns": [i + 1 for i, _ in hits],
-                          "line_preview": escape_markdown(line, max_len=200)},
+                          "line_preview": escape_markdown(redact_secrets(line), max_len=200)},
                 recommendation="Remove the character or justify it; review the line in a hex-aware viewer.",
             )
         )

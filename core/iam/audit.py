@@ -2,13 +2,13 @@
 
 from __future__ import annotations
 
-import json
 from dataclasses import dataclass
 from datetime import UTC, date, datetime
 from pathlib import Path
 from typing import Any
 
 from core.common import AnalysisReport, Finding, FindingSeverity
+from core.loaders import load_structured
 
 TOOL = "iam_audit"
 DEFAULT_ADMIN_POLICIES = ("AdministratorAccess", "IAMFullAccess")
@@ -28,12 +28,16 @@ class AuditConfig:
 
 
 def parse_date(value: Any) -> date | None:
+    """ISO date or timestamp; empty or non-date markers (AWS credential reports use "N/A", "no_information") -> None."""
     if not value:
         return None
     text = str(value)
-    if len(text) == 10:
-        return date.fromisoformat(text)
-    dt = datetime.fromisoformat(text.replace("Z", "+00:00"))
+    try:
+        if len(text) == 10:
+            return date.fromisoformat(text)
+        dt = datetime.fromisoformat(text.replace("Z", "+00:00"))
+    except ValueError:
+        return None
     return (dt if dt.tzinfo else dt.replace(tzinfo=UTC)).astimezone(UTC).date()
 
 
@@ -123,6 +127,8 @@ def audit_inventory(inventory: dict[str, Any], cfg: AuditConfig) -> tuple[list[F
 
 def config_from(inventory: dict[str, Any], opts: dict[str, Any]) -> AuditConfig:
     """`as_of` precedence: option, then the inventory's own `as_of`, then today (UTC)."""
+    if opts.get("as_of") and parse_date(opts["as_of"]) is None:
+        raise ValueError(f"as_of must be an ISO date, got {opts['as_of']!r}")
     as_of = parse_date(opts.get("as_of")) or parse_date(inventory.get("as_of")) or datetime.now(UTC).date()
     d = AuditConfig(as_of=as_of)
     return AuditConfig(
@@ -136,7 +142,7 @@ def config_from(inventory: dict[str, Any], opts: dict[str, Any]) -> AuditConfig:
 
 
 def load_inventory(path: Path) -> dict[str, Any]:
-    data = json.loads(Path(path).read_text(encoding="utf-8"))
+    data = load_structured(Path(path))
     if not isinstance(data, dict) or not isinstance(data.get("users"), list):
         raise ValueError(f"{path}: not an identity inventory (no `users` list)")
     return data

@@ -11,12 +11,12 @@ from datetime import UTC, datetime, timedelta
 from pathlib import Path
 from typing import Any, Literal
 
-from core.common import AnalysisReport, Finding
+from core.common import AnalysisReport, Finding, max_distinct_in_window
 from core.loaders import get_field
 
 Kind = Literal["auth", "sudo"]
 Outcome = Literal["success", "failure", "unknown"]
-DEFAULT_SYSLOG_YEAR = 2024  # classic syslog lines carry no year; pass `year=` for real data
+MONTHS = ("Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec")
 SHELLS = frozenset({"bash", "sh", "zsh", "dash", "fish", "su", "ksh", "tcsh"})
 EARTH_RADIUS_KM = 6371.0088
 
@@ -41,10 +41,12 @@ class AuthEvent:
 
 _SYSLOG_TS = re.compile(r"^(?P<ts>[A-Z][a-z]{2}\s+\d{1,2}\s\d{2}:\d{2}:\d{2})\s+(?P<host>\S+)\s+(?P<rest>.*)$")
 _ISO_TS = re.compile(r"^(?P<ts>\d{4}-\d{2}-\d{2}T\S+)\s+(?P<host>\S+)\s+(?P<rest>.*)$")
-_SSHD_FAILED = re.compile(r"sshd\[\d+\]: Failed (?P<method>\S+) for (?P<invalid>invalid user )?(?P<user>\S+) "
-                          r"from (?P<ip>\S+)")
-_SSHD_ACCEPTED = re.compile(r"sshd\[\d+\]: Accepted (?P<method>\S+) for (?P<user>\S+) from (?P<ip>\S+)")
-_SSHD_INVALID = re.compile(r"sshd\[\d+\]: Invalid user (?P<user>\S*) from (?P<ip>\S+)")
+# The username is attacker-controlled and may itself contain " from <ip> port <n>": the greedy user group plus the
+# end-of-line anchor make the source address always the one sshd appended last.
+_SSHD_TAIL = r" from (?P<ip>\S+)(?: port \d+)?(?: ssh2)?(?:: .*)?$"
+_SSHD_FAILED = re.compile(r"sshd\[\d+\]: Failed (?P<method>\S+) for (?P<invalid>invalid user )?(?P<user>.+)" + _SSHD_TAIL)
+_SSHD_ACCEPTED = re.compile(r"sshd\[\d+\]: Accepted (?P<method>\S+) for (?P<user>.+)" + _SSHD_TAIL)
+_SSHD_INVALID = re.compile(r"sshd\[\d+\]: Invalid user (?P<user>.*)" + _SSHD_TAIL)
 _SUDO = re.compile(r"sudo(?:\[\d+\])?:\s+(?P<user>\S+) : .*?USER=(?P<target>\S+) ; COMMAND=(?P<command>.*)$")
 
 
@@ -56,12 +58,13 @@ def _parse_ts(match: re.Match[str], year: int) -> datetime:
     return datetime.strptime(f"{year} {' '.join(raw.split())}", "%Y %b %d %H:%M:%S").replace(tzinfo=UTC)
 
 
-def parse_auth_line(line: str, line_no: int = 0, year: int = DEFAULT_SYSLOG_YEAR) -> AuthEvent | None:
-    """Parse one auth.log/syslog line; unrelated lines return None. Syslog times are assumed UTC."""
+def parse_auth_line(line: str, line_no: int = 0, year: int | None = None) -> AuthEvent | None:
+    """Parse one auth.log/syslog line; unrelated lines return None, a malformed timestamp raises ValueError.
+    Syslog times are assumed UTC, in `year` (default: the current year)."""
     m = _SYSLOG_TS.match(line) or _ISO_TS.match(line)
     if not m:
         return None
-    ts, host, rest = _parse_ts(m, year), m.group("host"), m.group("rest")
+    ts, host, rest = _parse_ts(m, year or datetime.now(UTC).year), m.group("host"), m.group("rest")
     if f := _SSHD_FAILED.search(rest):
         return AuthEvent(ts, "auth", "failure", f.group("user"), f.group("ip"), host, f.group("method"),
                          invalid_user=bool(f.group("invalid")), line=line_no)
@@ -76,8 +79,36 @@ def parse_auth_line(line: str, line_no: int = 0, year: int = DEFAULT_SYSLOG_YEAR
     return None
 
 
-def parse_auth_log(lines: list[str], year: int = DEFAULT_SYSLOG_YEAR) -> list[AuthEvent]:
-    return [e for i, line in enumerate(lines, start=1) if (e := parse_auth_line(line, i, year))]
+def _parse_syslog(lines: list[str], year: int) -> tuple[list[AuthEvent], int]:
+    events: list[AuthEvent] = []
+    bad, prev_month = 0, 0
+    for i, line in enumerate(lines, start=1):
+        if (m := _SYSLOG_TS.match(line)) and m.group("ts")[:3] in MONTHS:
+            month = MONTHS.index(m.group("ts")[:3]) + 1
+            if month < prev_month:
+                year += 1
+            prev_month = month
+        try:
+            event = parse_auth_line(line, i, year)
+        except ValueError:
+            bad += 1
+            continue
+        if event:
+            events.append(event)
+    return events, bad
+
+
+def parse_auth_log(lines: list[str], year: int | None = None) -> tuple[list[AuthEvent], int]:
+    """(events, malformed line count). Syslog lines carry no year: `year` is the first line's year, and a month that
+    goes backwards (Dec -> Jan) starts the next one. Without `year`, the latest year that keeps every event out of
+    the future is assumed."""
+    if year is not None:
+        return _parse_syslog(lines, year)
+    now = datetime.now(UTC)
+    events, bad = _parse_syslog(lines, now.year)
+    if events and max(e.timestamp for e in events) > now + timedelta(days=1):
+        events, bad = _parse_syslog(lines, now.year - 1)
+    return events, bad
 
 
 def _outcome(value: Any) -> Outcome:
@@ -123,14 +154,22 @@ def parse_json_event(record: dict[str, Any], line_no: int = 0) -> AuthEvent | No
     )
 
 
-def parse_json_events(lines: list[str]) -> list[AuthEvent]:
+def parse_json_events(lines: list[str]) -> tuple[list[AuthEvent], int]:
+    """(events, malformed line count): a line that is not JSON or carries a bad timestamp/geo is skipped."""
     events = []
+    bad = 0
     for i, line in enumerate(lines, start=1):
-        if line.strip():
+        if not line.strip():
+            continue
+        try:
             record = json.loads(line)
-            if isinstance(record, dict) and (e := parse_json_event(record, i)):
-                events.append(e)
-    return events
+            event = parse_json_event(record, i) if isinstance(record, dict) else None
+        except (ValueError, TypeError):
+            bad += 1
+            continue
+        if event:
+            events.append(event)
+    return events, bad
 
 
 def _max_in_window(times: list[datetime], window: timedelta) -> tuple[int, int]:
@@ -144,6 +183,11 @@ def _max_in_window(times: list[datetime], window: timedelta) -> tuple[int, int]:
     return best, best_end
 
 
+def _most_users(fails: list[AuthEvent], window: timedelta) -> tuple[int, int, int]:
+    """(most distinct users failing inside any window, that window's start index, its end index)."""
+    return max_distinct_in_window(fails, lambda e: e.timestamp, lambda e: e.user, window)
+
+
 def _failures_by_ip(events: list[AuthEvent]) -> dict[str, list[AuthEvent]]:
     grouped: dict[str, list[AuthEvent]] = defaultdict(list)
     for e in sorted(events, key=lambda e: e.timestamp):
@@ -153,18 +197,23 @@ def _failures_by_ip(events: list[AuthEvent]) -> dict[str, list[AuthEvent]]:
 
 
 def detect_bruteforce(events: list[AuthEvent], threshold: int = 5, window: timedelta = timedelta(minutes=10),
-                      spray_min_users: int = 5, source: str = "") -> list[Finding]:
-    """>= threshold failures from one IP within window. IPs spread over >= spray_min_users users are left to
-    detect_spraying. A later success from the same IP escalates to critical."""
+                      spray_min_users: int = 5, source: str = "", spray_window: timedelta = timedelta(minutes=30),
+                      success_window: timedelta = timedelta(hours=1)) -> list[Finding]:
+    """>= threshold failures from one IP within window. A burst spread over >= spray_min_users users is left to
+    detect_spraying when spraying fires for that IP. A success from the same IP within success_window after the
+    burst escalates to critical."""
     findings = []
     successes = [e for e in sorted(events, key=lambda e: e.timestamp) if e.kind == "auth" and e.outcome == "success"]
     for ip, fails in sorted(_failures_by_ip(events).items()):
         count, end = _max_in_window([e.timestamp for e in fails], window)
-        users = sorted({e.user for e in fails})
-        if count < threshold or len(users) >= spray_min_users:
+        burst_users = {e.user for e in fails[end - count + 1 : end + 1]}
+        sprayed = _most_users(fails, spray_window)[0] >= spray_min_users
+        if count < threshold or (sprayed and len(burst_users) >= spray_min_users):
             continue
+        users = sorted({e.user for e in fails})
         burst_end = fails[end].timestamp
-        success = next((e for e in successes if e.source_ip == ip and e.timestamp >= burst_end), None)
+        success = next((e for e in successes if e.source_ip == ip
+                        and burst_end <= e.timestamp <= burst_end + success_window), None)
         evidence: dict[str, Any] = {"source_ip": ip, "failures_in_window": count, "total_failures": len(fails),
                                     "users": users, "first_seen": fails[0].timestamp.isoformat(),
                                     "window_minutes": window.total_seconds() / 60}
@@ -190,14 +239,9 @@ def detect_spraying(events: list[AuthEvent], min_users: int = 5, window: timedel
     """One IP failing against >= min_users distinct accounts within window."""
     findings = []
     for ip, fails in sorted(_failures_by_ip(events).items()):
-        start, best_users, best_end = 0, set[str](), 0
-        for end in range(len(fails)):
-            while fails[end].timestamp - fails[start].timestamp > window:
-                start += 1
-            users = {e.user for e in fails[start : end + 1]}
-            if len(users) > len(best_users):
-                best_users, best_end = users, end
-        if len(best_users) >= min_users:
+        count, best_start, best_end = _most_users(fails, window)
+        if count >= min_users:
+            best_users = {e.user for e in fails[best_start : best_end + 1]}
             findings.append(Finding(
                 rule_id="SOC-PASSWORD-SPRAY", title=f"Password spraying from {ip} against {len(best_users)} accounts",
                 severity="high", category="detection", resource=ip, location=f"{source}:{fails[best_end].line}",
@@ -269,12 +313,13 @@ def detect_unusual_sudo(events: list[AuthEvent], admin_users: frozenset[str] = f
 def detect_all(events: list[AuthEvent], source: str = "", **opts: Any) -> list[Finding]:
     raw_admins = opts.get("admin_users") or ()
     admin_users = frozenset(raw_admins.split(",") if isinstance(raw_admins, str) else raw_admins)
+    spray_window = timedelta(minutes=float(opts.get("spray_window_minutes", 30)))
     return [
         *detect_bruteforce(events, int(opts.get("bruteforce_threshold", 5)),
                            timedelta(minutes=float(opts.get("bruteforce_window_minutes", 10))),
-                           int(opts.get("spray_min_users", 5)), source),
-        *detect_spraying(events, int(opts.get("spray_min_users", 5)),
-                         timedelta(minutes=float(opts.get("spray_window_minutes", 30))), source),
+                           int(opts.get("spray_min_users", 5)), source, spray_window,
+                           timedelta(minutes=float(opts.get("bruteforce_success_window_minutes", 60)))),
+        *detect_spraying(events, int(opts.get("spray_min_users", 5)), spray_window, source),
         *detect_impossible_travel(events, float(opts.get("max_speed_kmh", 900)), source=source),
         *detect_unusual_sudo(events, admin_users, int(opts.get("sudo_baseline_min", 3)), source),
     ]
@@ -291,12 +336,13 @@ def analyze_file(path: Path, **opts: Any) -> AnalysisReport:
     """auth.log/syslog (tool `auth_log`) or JSON-lines events (tool `json_events`), chosen by content."""
     lines = Path(path).read_text(encoding="utf-8", errors="replace").splitlines()
     as_json = is_json_lines(Path(path), lines)
-    events = parse_json_events(lines) if as_json else parse_auth_log(lines, int(opts.get("year", DEFAULT_SYSLOG_YEAR)))
+    year = int(opts["year"]) if opts.get("year") is not None else None
+    events, bad_lines = parse_json_events(lines) if as_json else parse_auth_log(lines, year)
     findings = detect_all(events, str(path), **opts)
     failures = sum(1 for e in events if e.kind == "auth" and e.outcome == "failure")
     return AnalysisReport(
         pack="soc", tool="json_events" if as_json else "auth_log", input=str(path), findings=findings,
-        metrics={"lines": len(lines), "events": len(events), "auth_failures": failures,
+        metrics={"lines": len(lines), "events": len(events), "bad_lines": bad_lines, "auth_failures": failures,
                  "auth_successes": sum(1 for e in events if e.kind == "auth" and e.outcome == "success"),
                  "sudo_events": sum(1 for e in events if e.kind == "sudo"),
                  "unique_source_ips": len({e.source_ip for e in events if e.source_ip})},

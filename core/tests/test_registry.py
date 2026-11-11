@@ -1,10 +1,12 @@
 import json
 import shutil
 from pathlib import Path
+from typing import get_args
 
 import pytest
 
-from core.registry import PACK_TOOLS, UnknownInputError, detect_tool, main, run_pack
+from core.common import PackName
+from core.registry import PACKS, UnknownInputError, detect_tool, main, run_pack
 
 
 @pytest.mark.parametrize(("pack", "rel", "tool"), [
@@ -43,8 +45,9 @@ def test_detect_unknown(fixtures):
 
 
 def test_pack_tools_shape():
-    assert set(PACK_TOOLS) == {"swe", "devops", "soc", "iam", "mcp_gov", "gcp_sre"}
-    assert all(callable(fn) for tools in PACK_TOOLS.values() for fn in tools.values())
+    assert set(PACKS) == set(get_args(PackName)) == {"swe", "devops", "soc", "iam", "mcp_gov", "gcp_sre"}
+    assert all(callable(fn) for pack in PACKS.values() for fn in pack.tools.values())
+    assert all(callable(pack.detect) for pack in PACKS.values())
 
 
 def test_run_pack_directory(fixtures):
@@ -154,3 +157,36 @@ def test_cli_new_packs(fixtures, tmp_path, capsys):
     assert json.loads(out.read_text())["version"] == "2.1.0"
     assert main(["gcp_sre", str(fixtures / "gcp_sre" / "kafka_broker.log"), "--opt", "lag_threshold=99999999", "--format", "json"]) == 0
     assert "KAFKA-CONSUMER-LAG" not in capsys.readouterr().out
+
+
+def test_directory_mode_skips_symlinks_leaving_the_root(fixtures, tmp_path):
+    root = tmp_path / "in"
+    root.mkdir()
+    (root / "outside.json").symlink_to(fixtures / "iam" / "policies" / "admin.json")
+    (root / "outdir").symlink_to(fixtures / "iam" / "policies", target_is_directory=True)
+    shutil.copy(fixtures / "iam" / "policies" / "least_privilege.json", root / "own.json")
+    assert [Path(r.input).name for r in run_pack("iam", root)] == ["own.json"]
+
+
+def test_directory_mode_turns_any_analyzer_crash_into_an_input_error(tmp_path):
+    (tmp_path / "model.yaml").write_text("roles:\n  admin: not-a-mapping\nusers: {}\n")
+    shutil.copy(Path(__file__).parent.parent / "fixtures" / "iam" / "policies" / "admin.json", tmp_path / "p.json")
+    reports = run_pack("iam", tmp_path)
+    by_name = {Path(r.input).name: r for r in reports}
+    assert by_name["model.yaml"].findings[0].rule_id == "INPUT-ERROR"
+    assert "AttributeError" in by_name["model.yaml"].findings[0].title
+    assert by_name["p.json"].tool == "iam_policy"
+
+
+def test_yaml_iam_inputs_route_to_working_analyzers(tmp_path):
+    (tmp_path / "policy.yml").write_text("Version: '2012-10-17'\nStatement: [{Effect: Allow, Action: '*', Resource: '*'}]\n")
+    (tmp_path / "inventory.yaml").write_text("as_of: 2025-06-30\nusers: [{name: a, created: '2025-06-01'}]\n")
+    reports = {r.tool: r for r in run_pack("iam", tmp_path)}
+    assert set(reports) == {"iam_policy", "iam_audit"}
+    assert all(f.rule_id != "INPUT-ERROR" for r in reports.values() for f in r.findings)
+    assert [f.rule_id for f in reports["iam_policy"].findings] == ["IAM001"]
+
+
+def test_cli_reports_os_errors_cleanly(fixtures, capsys):
+    assert main(["swe", str(fixtures / "swe"), "--tool", "sql_lint"]) == 1
+    assert capsys.readouterr().err.startswith("error:")

@@ -7,7 +7,7 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
 
-from core.common import AnalysisReport, Finding, FindingSeverity
+from core.common import AnalysisReport, Finding, FindingSeverity, as_list
 from core.loaders import load_structured
 
 TOOL = "rbac"
@@ -22,7 +22,11 @@ class Resolution:
 
 
 def _parents(roles: dict[str, Any], role: str) -> list[str]:
-    return list((roles.get(role) or {}).get("inherits") or [])
+    return [str(p) for p in as_list((roles.get(role) or {}).get("inherits"))]
+
+
+def _user_roles(user: Any) -> list[str]:
+    return [str(r) for r in as_list((user or {}).get("roles"))]
 
 
 def ancestors(roles: dict[str, Any], role: str) -> set[str]:
@@ -38,32 +42,78 @@ def ancestors(roles: dict[str, Any], role: str) -> set[str]:
     return seen
 
 
+def _strongly_connected(roles: dict[str, Any]) -> list[set[str]]:
+    """Tarjan's SCC, iterative (no recursion limit), linear in roles + inherits edges."""
+    index: dict[str, int] = {}
+    low: dict[str, int] = {}
+    stack: list[str] = []
+    on_stack: set[str] = set()
+    components: list[set[str]] = []
+    for root in sorted(roles):
+        if root in index:
+            continue
+        work = [(root, iter(_parents(roles, root)))]
+        index[root] = low[root] = len(index)
+        stack.append(root)
+        on_stack.add(root)
+        while work:
+            node, parents = work[-1]
+            parent = next((p for p in parents if p in roles), None)
+            if parent is None:
+                work.pop()
+                if work:
+                    low[work[-1][0]] = min(low[work[-1][0]], low[node])
+                if low[node] == index[node]:
+                    component: set[str] = set()
+                    while True:
+                        member = stack.pop()
+                        on_stack.discard(member)
+                        component.add(member)
+                        if member == node:
+                            break
+                    components.append(component)
+            elif parent not in index:
+                index[parent] = low[parent] = len(index)
+                stack.append(parent)
+                on_stack.add(parent)
+                work.append((parent, iter(_parents(roles, parent))))
+            elif parent in on_stack:
+                low[node] = min(low[node], index[parent])
+    return components
+
+
+def _cycle_path(roles: dict[str, Any], members: set[str]) -> list[str]:
+    """A shortest inheritance path from the alphabetically first member back to itself, inside one SCC."""
+    start = min(members)
+    previous: dict[str, str] = {}
+    frontier = [start]
+    while frontier:
+        nxt = []
+        for node in frontier:
+            for parent in sorted(set(_parents(roles, node)) & members):
+                if parent == start:
+                    path = [node]
+                    while path[-1] != start:
+                        path.append(previous[path[-1]])
+                    return [start, *reversed(path[:-1]), start]
+                if parent not in previous:
+                    previous[parent] = node
+                    nxt.append(parent)
+        frontier = nxt
+    return [start, start]
+
+
 def find_cycles(roles: dict[str, Any]) -> list[list[str]]:
-    """Each inheritance cycle once, as [a, b, ..., a], starting from its alphabetically first member."""
-    cycles: list[list[str]] = []
-    seen_members: list[set[str]] = []
-
-    def dfs(role: str, path: list[str]) -> None:
-        for parent in _parents(roles, role):
-            if parent in path:
-                cycle = path[path.index(parent):]
-                if set(cycle) not in seen_members:
-                    seen_members.append(set(cycle))
-                    first = cycle.index(min(cycle))
-                    rotated = cycle[first:] + cycle[:first]
-                    cycles.append([*rotated, rotated[0]])
-            elif parent in roles:
-                dfs(parent, [*path, parent])
-
-    for role in sorted(roles):
-        dfs(role, [role])
-    return cycles
+    """One cycle per strongly connected group of roles, as [a, b, ..., a] from its alphabetically first member."""
+    cyclic = [c for c in _strongly_connected(roles)
+              if len(c) > 1 or next(iter(c)) in _parents(roles, next(iter(c)))]
+    return sorted(_cycle_path(roles, c) for c in cyclic)
 
 
 def resolve_roles(roles: dict[str, Any]) -> Resolution:
     """Effective permissions per role = own permissions of the role and all its ancestors."""
     perms = {
-        name: {p for anc in ancestors(roles, name) for p in (roles.get(anc) or {}).get("permissions") or []}
+        name: {str(p) for anc in ancestors(roles, name) for p in as_list((roles.get(anc) or {}).get("permissions"))}
         for name in roles
     }
     unknown = {p for name in roles for p in _parents(roles, name) if p not in roles}
@@ -77,7 +127,7 @@ def has_permission(granted: set[str], permission: str) -> bool:
 
 def user_permissions(user: dict[str, Any], resolution: Resolution) -> set[str]:
     perms: set[str] = set()
-    for role in user.get("roles") or []:
+    for role in _user_roles(user):
         perms |= resolution.role_permissions.get(role, set())
     return perms
 
@@ -97,7 +147,7 @@ def check_model(model: dict[str, Any], source: str = "") -> tuple[list[Finding],
     for cycle in res.cycles:
         findings.append(_finding("RBAC-CYCLE", "high", f"Role inheritance cycle: {' -> '.join(cycle)}",
                                  f"role:{cycle[0]}", "Break the cycle; inheritance must be a DAG.", cycle=cycle))
-    referenced = {r for u in users.values() for r in (u or {}).get("roles") or []}
+    referenced = {r for u in users.values() for r in _user_roles(u)}
     for role in sorted(res.unknown_roles | (referenced - set(roles))):
         findings.append(_finding("RBAC-UNKNOWN-ROLE", "medium", f"Reference to undefined role `{role}`", f"role:{role}",
                                  "Define the role or remove the reference."))
@@ -111,7 +161,7 @@ def check_model(model: dict[str, Any], source: str = "") -> tuple[list[Finding],
                 findings.append(_finding(
                     "RBAC-SOD", "high", f"{name} holds conflicting duties `{a}` + `{b}`", f"user:{name}",
                     "Split the duties across different users or add a compensating approval control.",
-                    user=name, conflict=[a, b], roles=(users[name] or {}).get("roles") or []))
+                    user=name, conflict=[a, b], roles=_user_roles(users[name])))
         admin = sorted(p for p in perms if p in admin_perms)
         if admin:
             findings.append(_finding("RBAC-ADMIN", "medium", f"{name} has admin-equivalent permissions", f"user:{name}",

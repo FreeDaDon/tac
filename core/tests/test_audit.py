@@ -46,3 +46,12 @@ def test_parse_date():
     assert parse_date("2025-06-30") == date(2025, 6, 30)
     assert parse_date("2025-06-30T23:30:00-02:00") == date(2025, 7, 1)
     assert parse_date(None) is None
+
+
+def test_non_date_markers_are_unknown(tmp_path):
+    assert parse_date("N/A") is None and parse_date("no_information") is None and parse_date("not_supported") is None
+    inventory = tmp_path / "inventory.yaml"
+    inventory.write_text("as_of: 2025-06-30\nusers:\n  - name: svc\n    type: service\n    created: '2025-01-01'\n"
+                         "    last_login: N/A\n    access_keys:\n      - {id: k1, created: '2025-06-01', last_used: no_information}\n")
+    report = analyze_file(inventory)
+    assert [f.rule_id for f in report.findings] == ["AUD-NEVER-USED"]

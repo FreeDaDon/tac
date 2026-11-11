@@ -14,15 +14,14 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
 
-from core.common import AnalysisReport, Finding, FindingSeverity
-from core.security.sanitize import find_suspicious_unicode, snippet
+from core.common import SEVERITY_ORDER, AnalysisReport, Finding, FindingSeverity
+from core.security.sanitize import TAG_CHARS, find_suspicious_unicode, snippet
 from core.security.secret_scan import iter_files, read_text_file
 
 TOOL = "connector_scan"
 MAX_FINDINGS_PER_FILE = 200
 SKIP_SUFFIXES = (".lock", ".min.js", ".map", ".svg", ".png", ".jpg", ".gif", ".ico", ".woff", ".woff2", ".pdf")
 SKIP_NAMES = frozenset({"package-lock.json", "yarn.lock", "pnpm-lock.yaml", "uv.lock", "poetry.lock"})
-TAG_CHAR_RANGE = range(0xE0000, 0xE0080)  # Unicode "tag" block: invisible ASCII smuggling
 
 
 @dataclass(frozen=True)
@@ -64,7 +63,7 @@ INJECTION_RULES: tuple[LineRule, ...] = (
           r"|</?\s*(?:system|untrusted[\w_-]*)\s*>",
           "Strip role-delimiter markup; it can spoof a system message inside tool output."),
     _rule("INJ-HIDDEN-COMMENT", "medium", "prompt-injection", "Instruction-like text hidden in an HTML comment",
-          r"<!--[^\n]*\b(instruction|ignore|you must|always|never tell|system prompt|assistant)\b[^\n]*-->",
+          r"<!--[^\n]{0,300}?\b(instruction|ignore|you must|always|never tell|system prompt|assistant)\b[^\n]{0,300}?-->",
           "Remove hidden comments from connector docs and tool metadata."),
 )
 
@@ -75,8 +74,8 @@ SENSITIVE_PATH = (r"(?:~|\$HOME|/home/\w+|/root)?/?\.(?:ssh|aws|gnupg|kube|docke
 ENV_DUMP = (r"\bdict\(os\.environ\)|\bos\.environ\.(?:copy|items|keys|values)\(\)|\bjson\.dumps\(\s*os\.environ"
             r"|\bprintenv\b|\benv\s*\||JSON\.stringify\(\s*process\.env\s*\)|Object\.\w+\(process\.env\)|\.\.\.process\.env")
 NET_EGRESS = (r"\brequests\.(?:post|put|patch)\(|\bhttpx\.(?:post|put)\(|\burllib\.request\.urlopen\(|\bhttp\.client\b"
-              r"|\bfetch\(|\baxios\.(?:post|put)|\bcurl\s+[^|\n]*(?:-d\b|--data|-F\b|-T\b|--upload-file)"
-              r"|\bwget\s+[^\n]*--post|\b(?:nc|ncat|socat)\s+\S+\s+\d+|\bsocket\.(?:connect|create_connection)\b"
+              r"|\bfetch\(|\baxios\.(?:post|put)|\bcurl\s+[^|\n]{0,300}?(?:-d\b|--data|-F\b|-T\b|--upload-file)"
+              r"|\bwget\s+[^\n]{0,300}?--post|\b(?:nc|ncat|socat)\s+\S+\s+\d+|\bsocket\.(?:connect|create_connection)\b"
               r"|\bXMLHttpRequest\b|navigator\.sendBeacon")
 EXFIL_SINK = (r"webhook\.site|requestbin|pipedream\.net|ngrok(?:-free)?\.(?:io|app|dev)|burpcollaborator|oast\.(?:fun|live|site|me)"
               r"|interact\.sh|pastebin\.com|transfer\.sh|discord(?:app)?\.com/api/webhooks|hooks\.slack\.com/services")
@@ -93,20 +92,21 @@ EXFIL_RULES: tuple[LineRule, ...] = (
     _rule("EXF-SINK-DOMAIN", "high", "exfiltration", "Known data-capture / tunnel / paste domain", EXFIL_SINK,
           "Block the destination; no enterprise connector needs a public capture endpoint."),
     _rule("EXF-MD-IMAGE", "high", "exfiltration", "Markdown or HTML image URL that interpolates data (render-time exfiltration)",
-          r"!\[[^\]]*\]\(\s*https?://[^)\s]*[?&][^)\s]*(?:\{\{|\$\{|\{[a-z_]+\}|%7B)"
-          r"|<img[^>]+src=[\"']https?://[^\"']*[?&][^\"']*(?:\{\{|\$\{|\{[a-z_]+\})",
+          r"!\[[^\]]{0,300}\]\(\s*https?://[^)\s?&]{0,300}[?&][^)\s]{0,300}?(?:\{\{|\$\{|\{[a-z_]+\}|%7B)"
+          r"|<img[^>]{1,300}?src=[\"']https?://[^\"'?&]{0,300}[?&][^\"']{0,300}?(?:\{\{|\$\{|\{[a-z_]+\})",
           "Strip remote images from tool output or proxy them through an allowlist; URLs must not carry model data."),
     _rule("EXE-DYNAMIC", "high", "execution", "Dynamic code execution or unsafe deserialization",
-          r"\beval\(|\bexec\(|\bos\.system\(|subprocess\.\w+\([^)]*shell\s*=\s*True|\bchild_process\b.*\bexec(?:Sync)?\("
-          r"|\bnew Function\(|\bpickle\.loads?\(|\byaml\.load\((?!.*SafeLoader)",
+          r"\beval\(|\bexec\(|\bos\.system\(|subprocess\.\w+\([^)]{0,300}?shell\s*=\s*True"
+          r"|\bchild_process\b.{0,300}?\bexec(?:Sync)?\(|\bnew Function\(|\bpickle\.loads?\("
+          r"|\byaml\.load\((?!.{0,300}SafeLoader)",
           "Replace with a fixed argument list; never build code or shell strings from model-supplied input."),
     _rule("SUP-REMOTE-EXEC", "critical", "supply-chain", "Downloads and executes remote code",
-          r"(?:curl|wget)\s[^|\n]*\|\s*(?:sudo\s+)?(?:ba|z)?sh\b|base64\s+(?:-d|--decode)[^|\n]*\|\s*(?:ba)?sh"
-          r"|\bpowershell\b.*-enc(?:odedcommand)?\b|\biex\s*\(.*(?:downloadstring|iwr)",
+          r"(?:curl|wget)\s[^|\n]{0,300}\|\s*(?:sudo\s+)?(?:ba|z)?sh\b|base64\s+(?:-d|--decode)[^|\n]{0,300}\|\s*(?:ba)?sh"
+          r"|\bpowershell\b.{0,300}?-enc(?:odedcommand)?\b|\biex\s*\(.{0,300}?(?:downloadstring|iwr)",
           "Block: vendor the code, pin it by hash and review it instead of piping it into a shell."),
     _rule("SUP-INSTALL", "medium", "supply-chain", "Install hook or install from a URL/custom index",
-          r"\"(?:pre|post)?install\"\s*:|pip3?\s+install\s+[^\n]*(?:git\+|https?://|--index-url|--extra-index-url)"
-          r"|npm\s+(?:i|install)\s+[^\n]*(?:https?://|git\+)",
+          r"\"(?:pre|post)?install\"\s*:|pip3?\s+install\s+[^\n]{0,300}?(?:git\+|https?://|--index-url|--extra-index-url)"
+          r"|npm\s+(?:i|install)\s+[^\n]{0,300}?(?:https?://|git\+)",
           "Pin dependencies by version and hash from the approved registry; review install scripts."),
 )
 ALL_RULES = INJECTION_RULES + EXFIL_RULES
@@ -153,7 +153,7 @@ def scan_text(text: str, source: str, line_offset: int = 0, location_prefix: str
                 first_hit.setdefault(rule.rule_id, (line_no, snippet(line)))
                 findings.append(_finding(rule.rule_id, rule.severity, rule.category, rule.title, source, loc(line_no),
                                          {"line_preview": snippet(line)}, rule.recommendation))
-        tags = [c for c in line if ord(c) in TAG_CHAR_RANGE]
+        tags = [c for c in line if ord(c) in TAG_CHARS]
         if tags:
             hidden = "".join(chr(ord(c) - 0xE0000) for c in tags)
             findings.append(_finding("INJ-ASCII-SMUGGLING", "critical", "prompt-injection",
@@ -197,7 +197,7 @@ def analyze_file(path: Path, **opts: Any) -> AnalysisReport:
     """Scan one text file, or every text file under a directory, for injection/exfiltration/execution risks."""
     path = Path(path)
     findings: list[Finding] = []
-    scanned = 0
+    scanned = truncated = 0
     for file in iter_files(path):
         if _skip(file):
             continue
@@ -206,13 +206,15 @@ def analyze_file(path: Path, **opts: Any) -> AnalysisReport:
             continue
         scanned += 1
         rel = file.relative_to(path).as_posix() if path.is_dir() else str(file)
-        findings.extend(scan_text(text, rel)[:MAX_FINDINGS_PER_FILE])
+        file_findings = sorted(scan_text(text, rel), key=lambda f: -SEVERITY_ORDER[f.severity])
+        truncated += max(0, len(file_findings) - MAX_FINDINGS_PER_FILE)
+        findings.extend(file_findings[:MAX_FINDINGS_PER_FILE])
     by_category: dict[str, int] = {}
     for f in findings:
         by_category[f.category] = by_category.get(f.category, 0) + 1
     blocked = any(f.severity in ("critical", "high") for f in findings)
     return AnalysisReport(
         pack="mcp_gov", tool=TOOL, input=str(path), findings=findings,
-        metrics={"files_scanned": scanned, "by_category": by_category,
+        metrics={"files_scanned": scanned, "by_category": by_category, "findings_truncated": truncated,
                  "release_gate": "blocked" if blocked else ("needs_review" if findings else "eligible_for_human_review")},
         summary=f"{len(findings)} injection/exfiltration finding(s) in {scanned} file(s)")

@@ -1,4 +1,7 @@
+import json
+
 import pytest
+import yaml
 
 from core.loaders import load_jsonl
 from core.soc.sigma import (
@@ -110,3 +113,17 @@ def test_lint_only_without_events(tmp_path, fixtures):
     target.write_text((fixtures / "soc" / "rules" / "ssh_bruteforce.yml").read_text())
     report = analyze_file(target)
     assert report.summary.startswith("lint only") and "tp" not in report.metrics
+
+
+@pytest.mark.parametrize("selection", [{"src_ip|cidr": "10.0.0.0/8"}, {"process.name|re": "ssh(d"}])
+def test_unknown_modifiers_and_bad_regexes_fail_lint_not_evaluation(tmp_path, selection):
+    detection = {"selection": selection, "condition": "selection"}
+    assert [f.rule_id for f in lint_rule(rule(detection))] == ["SIGMA-LINT-CONDITION"]
+    with pytest.raises(SigmaError):
+        compile_rule(rule(detection))
+    rule_path = tmp_path / "r.yml"
+    rule_path.write_text(yaml.safe_dump(rule(detection)))
+    events = tmp_path / "events.jsonl"
+    events.write_text(json.dumps({"label": "benign", "src_ip": "10.1.1.1", "process": {"name": "x"}}) + "\n")
+    report = analyze_file(rule_path, events=events)
+    assert [f.rule_id for f in report.findings] == ["SIGMA-LINT-CONDITION"]

@@ -75,7 +75,7 @@ def parse_grype(data: dict[str, Any]) -> list[Vuln]:
         vulns.append(Vuln(
             vuln_id=v.get("id", ""), package=art.get("name", ""), installed=art.get("version", ""),
             fixed_version=fixed, severity=_severity(v.get("severity")), cvss=cvss, epss=epss,
-            target=locations[0].get("path", ""), title=v.get("description", "")[:200], source="grype",
+            target=locations[0].get("path", ""), title=(v.get("description") or "")[:200], source="grype",
             aliases=tuple(r.get("id", "") for r in m.get("relatedVulnerabilities") or [])))
     return vulns
 

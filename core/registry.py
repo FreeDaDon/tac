@@ -7,7 +7,7 @@ import json
 import sys
 from collections.abc import Callable, Iterator
 from pathlib import Path
-from typing import Any, Protocol
+from typing import Any, NamedTuple, Protocol
 
 import yaml
 
@@ -34,17 +34,14 @@ class UnknownInputError(ValueError):
     pass
 
 
-PACK_TOOLS: dict[str, dict[str, Analyzer]] = {
-    "swe": {"secret_scan": secret_scan.analyze_file, "sql_lint": sql_security.analyze_file,
-            "unicode_scan": sanitize.analyze_file},
-    "devops": {"tfplan": tfplan.analyze_file, "drift": drift.analyze_file, "rollback": rollback.analyze_file},
-    "soc": {"auth_log": logs.analyze_file, "json_events": logs.analyze_file, "zeek": zeek.analyze_file,
-            "sigma": sigma.analyze_file, "vuln_triage": vuln_triage.analyze_file},
-    "iam": {"iam_policy": policy.analyze_file, "rbac": rbac.analyze_file, "iam_audit": audit.analyze_file,
-            "iam_revoke": revoke.analyze_file},
-    "mcp_gov": {"mcp_manifest": manifest.analyze_file, "connector_scan": injection.analyze_file},
-    "gcp_sre": {"gcp_tf": tfgcp.analyze_file, "sre_logs": sre_logs.analyze_file, "node_trace": nodetrace.analyze_file},
-}
+Detector = Callable[[Path], str | None]
+
+
+class Pack(NamedTuple):
+    tools: dict[str, Analyzer]
+    detect: Detector  # picks the tool for one file, or None when no tool fits
+
+
 # Extra tools that also run (when no --tool is given) on a file another tool was auto-detected for.
 COMPANIONS: dict[tuple[str, str], tuple[tuple[str, Callable[[Path], bool]], ...]] = {
     ("gcp_sre", "sre_logs"): (("node_trace", nodetrace.looks_like_node_trace),),
@@ -72,6 +69,10 @@ def _head(path: Path, lines: int = 5) -> str:
             return "".join(fh.readline() for _ in range(lines))
     except OSError:
         return ""
+
+
+def _detect_swe(path: Path) -> str | None:
+    return "sql_lint" if path.suffix.lower() == ".sql" else "secret_scan"
 
 
 def _detect_devops(path: Path) -> str | None:
@@ -145,27 +146,43 @@ def _detect_gcp_sre(path: Path) -> str | None:
     return None
 
 
+# The one place a pack's tools and detector are registered; its name must also be in core.common.PackName.
+PACKS: dict[str, Pack] = {
+    "swe": Pack({"secret_scan": secret_scan.analyze_file, "sql_lint": sql_security.analyze_file,
+                 "unicode_scan": sanitize.analyze_file}, _detect_swe),
+    "devops": Pack({"tfplan": tfplan.analyze_file, "drift": drift.analyze_file, "rollback": rollback.analyze_file},
+                   _detect_devops),
+    "soc": Pack({"auth_log": logs.analyze_file, "json_events": logs.analyze_file, "zeek": zeek.analyze_file,
+                 "sigma": sigma.analyze_file, "vuln_triage": vuln_triage.analyze_file}, _detect_soc),
+    "iam": Pack({"iam_policy": policy.analyze_file, "rbac": rbac.analyze_file, "iam_audit": audit.analyze_file,
+                 "iam_revoke": revoke.analyze_file}, _detect_iam),
+    "mcp_gov": Pack({"mcp_manifest": manifest.analyze_file, "connector_scan": injection.analyze_file}, _detect_mcp_gov),
+    "gcp_sre": Pack({"gcp_tf": tfgcp.analyze_file, "sre_logs": sre_logs.analyze_file,
+                     "node_trace": nodetrace.analyze_file}, _detect_gcp_sre),
+}
+
+
 def detect_tool(pack: str, path: Path) -> str:
     """Pick the tool for an input by filename and content; raise UnknownInputError if nothing fits."""
     path = Path(path)
-    if pack not in PACK_TOOLS:
-        raise ValueError(f"unknown pack {pack!r}; expected one of {sorted(PACK_TOOLS)}")
-    if pack == "swe":
-        return "sql_lint" if path.suffix.lower() == ".sql" else "secret_scan"
-    if path.is_dir():
+    if pack not in PACKS:
+        raise ValueError(f"unknown pack {pack!r}; expected one of {sorted(PACKS)}")
+    if path.is_dir() and pack != "swe":
         raise UnknownInputError(f"{path} is a directory; use run_pack to analyze every file in it")
-    detectors = {"devops": _detect_devops, "soc": _detect_soc, "iam": _detect_iam,
-                 "mcp_gov": _detect_mcp_gov, "gcp_sre": _detect_gcp_sre}
-    tool = detectors[pack](path)
+    tool = PACKS[pack].detect(path)
     if tool is None:
         raise UnknownInputError(f"cannot detect a {pack} tool for {path}")
     return tool
 
 
 def iter_input_files(root: Path) -> Iterator[Path]:
+    """Regular files under `root`, skipping hidden/vendored directories, symlinks, and anything resolving outside it."""
+    real_root = root.resolve()
     for file in sorted(root.rglob("*")):
         rel = file.relative_to(root).parts
-        if file.is_file() and not any(p in SKIP_DIRS or p.startswith(".") for p in rel):
+        if any(p in SKIP_DIRS or p.startswith(".") for p in rel) or file.is_symlink() or not file.is_file():
+            continue
+        if file.resolve().is_relative_to(real_root):
             yield file
 
 
@@ -181,22 +198,22 @@ def _input_error(pack: str, tool: str, path: Path, exc: Exception) -> AnalysisRe
 def _companions(pack: str, chosen: str, path: Path, explicit_tool: str | None, opts: dict[str, Any]) -> list[AnalysisReport]:
     if explicit_tool is not None:
         return []
-    return [PACK_TOOLS[pack][name](path, **opts) for name, applies in COMPANIONS.get((pack, chosen), ()) if applies(path)]
+    return [PACKS[pack].tools[name](path, **opts) for name, applies in COMPANIONS.get((pack, chosen), ()) if applies(path)]
 
 
 def run_pack(pack: str, input_path: Path, tool: str | None = None, **opts: Any) -> list[AnalysisReport]:
     """Run one tool (given or detected) on a file, or every recognizable file of a directory."""
     input_path = Path(input_path)
-    if pack not in PACK_TOOLS:
-        raise ValueError(f"unknown pack {pack!r}; expected one of {sorted(PACK_TOOLS)}")
-    if tool is not None and tool not in PACK_TOOLS[pack]:
-        raise ValueError(f"unknown tool {tool!r} for pack {pack}; expected one of {sorted(PACK_TOOLS[pack])}")
+    if pack not in PACKS:
+        raise ValueError(f"unknown pack {pack!r}; expected one of {sorted(PACKS)}")
+    if tool is not None and tool not in PACKS[pack].tools:
+        raise ValueError(f"unknown tool {tool!r} for pack {pack}; expected one of {sorted(PACKS[pack].tools)}")
     if not input_path.exists():
         raise FileNotFoundError(input_path)
 
     if not input_path.is_dir() or pack == "swe":
         chosen = tool or detect_tool(pack, input_path)
-        return [PACK_TOOLS[pack][chosen](input_path, **opts), *_companions(pack, chosen, input_path, tool, opts)]
+        return [PACKS[pack].tools[chosen](input_path, **opts), *_companions(pack, chosen, input_path, tool, opts)]
 
     reports = []
     for file in iter_input_files(input_path):
@@ -208,9 +225,9 @@ def run_pack(pack: str, input_path: Path, tool: str | None = None, **opts: Any) 
             continue
         chosen = tool or detected
         try:
-            reports.append(PACK_TOOLS[pack][chosen](file, **opts))
+            reports.append(PACKS[pack].tools[chosen](file, **opts))
             reports.extend(_companions(pack, chosen, file, tool, opts))
-        except (ValueError, KeyError, TypeError) as exc:
+        except Exception as exc:  # one bad file must not abort a directory run
             reports.append(_input_error(pack, chosen, file, exc))
     return reports
 
@@ -248,7 +265,7 @@ def render(reports: list[AnalysisReport], fmt: str) -> str:
 
 def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(prog="python -m core.registry", description="Run deterministic domain tools.")
-    parser.add_argument("pack", choices=sorted(PACK_TOOLS))
+    parser.add_argument("pack", choices=sorted(PACKS))
     parser.add_argument("path", type=Path)
     parser.add_argument("--tool", help="tool name (default: auto-detect)")
     parser.add_argument("--format", choices=["md", "json", "sarif"], default="md")
@@ -261,7 +278,7 @@ def main(argv: list[str] | None = None) -> int:
 
     try:
         reports = run_pack(args.pack, args.path, args.tool, **parse_opts(args.opt))
-    except (ValueError, FileNotFoundError) as exc:
+    except (ValueError, OSError) as exc:
         print(f"error: {exc}", file=sys.stderr)
         return 1
     output = render(reports, args.format)
