@@ -25,10 +25,15 @@ still not covered.
 | Validators for model output | `security.py`: `validate_adw_id`, `validate_branch_name`, `validate_issue_number`, `resolve_inside` | Branch = Python prefix + validated model slug; plan/doc paths chosen by Python and resolved inside the worktree |
 | Strict output contracts | `.claude/commands/*.md` "Return ONLY" + schema + example; pydantic models in `data_types.py` | Malformed output is a failed attempt, never a pass |
 | Templates from main checkout only | `agent.py: execute_template` renders from the main repo | An agent editing `.claude/commands` in its worktree cannot rewrite its own future prompts |
+| Settings, hooks and MCP pinned to main | `agent.py: pinned_settings`, `ClaudeRunner` | Agents run with `--setting-sources user --settings <run>/settings.json --strict-mcp-config`; hook paths are absolute into the main checkout and `.mcp.json` is read from the main checkout, so a worktree copy of a hook, `settings.json` or `.mcp.json` has no effect |
+| Guardrail and gate-config edits fail red team | `redteam.py: detect_protected_changes`, `detect_gate_config_drift`, collection-hook scan | High findings for edits to `.claude/` (except the documenter's `conditional_docs.md`), `.github/`, `.mcp.json`, `CLAUDE.md`/`AGENTS.md`, `.secretsallow`, to `[tool.pytest/ruff/mypy/tac/coverage]`, to npm build/test/lint scripts, and for added pytest collection hooks |
+| Commit-bound verdicts | `gates.py: stamp`, `stale_gates`; `adw_sdlc_iso.py: reverify`; `adw_ship_iso.py` | Each gate records the commit it judged; ship refuses verdicts older than the merged commit (documenter files excepted) and merges with `--match-head-commit` |
+| Skips are failures | `gates.py: parse_junit`, `[tool.tac].allowed_skips` | A skipped test fails the unit gate unless the main checkout allowlists it |
+| E2E needs evidence | `adw_test_iso.py: missing_evidence` | A self-reported E2E pass counts only with non-empty screenshots written inside the run directory during that test |
 | Isolation guard for `--dangerously-skip-permissions` | `security.py: skip_permissions_allowed` | Only when `TAC_ALLOW_SKIP_PERMISSIONS=1` AND the working dir is `trees/<adw_id>/`; otherwise `--permission-mode acceptEdits` + the settings allowlist |
 | Permission allow/deny rules | `.claude/settings.json` | Narrow Bash allowlist; deny `.env` reads, `rm -rf`, `sudo`, force push, push to main, `curl`/`wget`, IaC apply/destroy, IAM deletes |
-| Environment allowlist | `security.py: safe_subprocess_env` | Agent subprocesses get only allowlisted vars; `GITHUB_PAT` is mapped to `GH_TOKEN` only when needed |
-| Fail-closed PreToolUse hook | `.claude/hooks/pre_tool_use.py`, test: `.claude/hooks/test_pre_tool_use.sh` | Exit 2 on malformed input or internal error. Normalizes and splits chained commands. Blocks rm -rf variants, `.env`/credential access, sudo, curl\|sh, chmod 777, force/main pushes, reset --hard, clean -fdx, terraform/pulumi apply/destroy, destructive aws/gcloud/kubectl, dd/mkfs, writes outside the project. Logs decisions to `agent/hook_logs/pre_tool_use.jsonl` |
+| Environment allowlist | `security.py: safe_subprocess_env`, `untrusted_code_env` | Agents get only allowlisted vars and never `GITHUB_PAT`/`GH_TOKEN` or Jev keys (the orchestrator pushes, opens PRs and calls Jev in-process). Gates, `ruff` and the app under test run agent-written code with no credentials at all, not even the model key or dashboard token |
+| Fail-closed PreToolUse hook | `.claude/hooks/pre_tool_use.py`, test: `.claude/hooks/test_pre_tool_use.sh` | Exit 2 on malformed input or internal error. Normalizes and splits chained commands. Blocks rm -rf variants, `.env`/credential access, sudo, curl\|sh, chmod 777, force/main pushes, reset --hard, clean -fdx, terraform/pulumi apply/destroy, destructive aws/gcloud/kubectl, dd/mkfs, writes outside the project. Logs decisions to `agent/hook_logs/pre_tool_use.jsonl`. Network clients (`curl`, `wget`, `nc`, `ssh`, `scp`, `rsync`, …) may only reach localhost, including inside `bash -c` and heredocs fed to a shell |
 | Telemetry hooks never block | `.claude/hooks/post_tool_use.py`, `stop.py` | Always exit 0; tool input truncated, file contents dropped |
 | Webhook authentication | `adws/adw_triggers/trigger_webhook.py` | 127.0.0.1 bind, `X-Hub-Signature-256` HMAC with constant-time compare, body cap, `TAC_TRIGGER_ALLOWED_USERS`, bot-comment loop guard |
 | Workflow allowlist | `adws/adw_triggers/launcher.py: ALLOWED_WORKFLOWS` | Triggers can only start known workflows |
@@ -58,7 +63,7 @@ still not covered.
   several, not a certification.
 - **Hook availability.** The PreToolUse command uses `|| exit 2`, so a missing `uv` blocks tools
   instead of silently allowing them; if hooks are disabled in user settings, none of this applies.
-- **GitHub token scope.** The agent environment gets `GH_TOKEN` when GitHub access is needed. Use a
+- **GitHub token scope.** Agents never receive the token; only the orchestrator's `gh` and `git push` calls use it. Use a
   fine-grained token limited to the one repository, with no admin scope, and branch protection on
   `main`.
 
@@ -72,5 +77,8 @@ still not covered.
    required CI on `main`.
 4. Keep `TAC_ZTE_ENABLED` unset until a problem class has a long clean streak; enable it for chores
    first.
-5. Set `TAC_DASHBOARD_TOKEN` if the dashboard is reachable from anywhere but localhost.
+5. Set `TAC_DASHBOARD_TOKEN` (URL-safe, e.g. `openssl rand -hex 32`) if the dashboard is reachable from anywhere but
+   localhost. Every `/api` route except `/api/health` then needs `Authorization: Bearer`, the WebSocket takes the
+   token in `Sec-WebSocket-Protocol`, and the telemetry and hook producers send it automatically. Worktree app
+   instances (E2E, review) run without it.
 6. Run `bash .claude/hooks/test_pre_tool_use.sh` after any change to the hook or settings.

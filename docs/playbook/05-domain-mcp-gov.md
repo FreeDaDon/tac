@@ -52,7 +52,7 @@ uv run adws/adw_domain_iso.py --pack mcp_gov --input server.json --no-agent     
 
 1. **Intake.** Copy `specs/templates/ai_connector_review.md`. Record the source, exact version, target audience and data classification.
 2. **Assess.** Run the pack on the connector. Read the manifest and every tool description yourself. The scanner finds patterns, not intent.
-3. **Configure.** Fix the manifest until only approved scopes and groups remain. Keep the connector definition in infrastructure as code, one module for dev, staging and production — `infra/terraform/modules/mcp-connector` does exactly this: it renders the manifest and a registration record, rejects wildcard scopes, plaintext transport and broad audiences at `terraform plan`, and requires a review ticket outside `dev`.
+3. **Configure.** Fix the manifest until only approved scopes and groups remain. Keep the connector definition in infrastructure as code, one module for dev, staging and production — `infra/terraform/modules/mcp-connector` does exactly this: it renders the manifest and a registration record, rejects wildcard or admin-class scopes, non-DNS, loopback or metadata URLs, broad audiences, duplicate tools and open-ended input schemas at `terraform plan`, requires a real `AICR-<number>` review ticket outside `dev`, and keeps a separate workspace and state per environment (see `infra/terraform/README.md`).
 4. **Authorize.** Security, IAM and the platform owner sign the release section. Only then is the connector registered.
 5. **Hand off.** Record the owner, audit log location and the events that trigger a re-review (new version, new tool, new scope).
 
@@ -68,5 +68,5 @@ uv run adws/adw_domain_iso.py --pack mcp_gov --input server.json --no-agent     
 
 1. Injection or exfiltration rule: add a `_rule(...)` to `INJECTION_RULES` or `EXFIL_RULES` in `core/mcp_gov/injection.py`, with a positive and a negative test in `core/tests/test_connector_scan.py`.
 2. Manifest or scope rule: add a check in `core/mcp_gov/manifest.py` (transport, launch, tools) or `core/mcp_gov/rbac.py` (scopes, audience) and a test in `core/tests/test_mcp_manifest.py`. Use the next free `MCP-*` id.
-3. New input kind: write `analyze_file(path, **opts) -> AnalysisReport`, then register it in `PACK_TOOLS["mcp_gov"]` and `_detect_mcp_gov` in `core/registry.py`.
+3. New input kind: write `analyze_file(path, **opts) -> AnalysisReport`, then register it in the `Pack` entry for `mcp_gov` in `PACKS` (`core/registry.py`: its `tools` map and its detector) in `core/registry.py`.
 4. New platform (Copilot Studio, Gemini): map its plugin manifest onto `McpServer` in `parse_servers`. The rules then apply unchanged.

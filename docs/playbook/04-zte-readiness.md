@@ -10,7 +10,7 @@ auto-merge locked until each of the following is true.
 |---|---|---|
 | 1 | `TAC_ZTE_ENABLED=1` | An explicit operator decision. The default is off. |
 | 2 | The domain ship policy is `zte_allowed` | Only `swe`. `devops` and `iam` are `pr_only`, `soc` is `report_only`. Infrastructure, identity and detection changes always get a human. |
-| 3 | Every required gate passed | `lint, types, unit, client, e2e, spec_review, redteam, secret_scan`, read from the persisted `GateReport`, not from the presence of state fields (the tac-7 bug). |
+| 3 | Every required gate passed on the commit being merged | `lint, types, unit, client, e2e, spec_review, redteam, secret_scan`, read from the persisted `GateReport`, not from the presence of state fields (the tac-7 bug). Each verdict carries the commit it judged; a later code change (anything outside `[tool.tac].post_gate_paths`, by default the documenter's files) makes it stale. The merge uses `--match-head-commit`, so a push after the checks ran cannot be merged. |
 | 4 | E2E not skipped, budget not exhausted | A skipped check is not a passed check. |
 | 5 | The PR exists and its CI checks are green | GitHub is the last independent verifier. The merge is a server-side squash, and your local checkout is never touched. |
 

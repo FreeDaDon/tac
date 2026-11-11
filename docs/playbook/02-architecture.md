@@ -8,7 +8,7 @@
                  │                                        │
                  ▼                                        ▼
 ┌──────────────────────────── AI Developer Workflows (adws/) ───────────────────────────┐
-│ plan ─▶ build ─▶ test ─▶ review ─▶ redteam ─▶ document ─▶ (ship, ZTE only)           │
+│ plan ─▶ build ─▶ test ─▶ review ─▶ document ─▶ redteam ─▶ (ship, ZTE only)           │
 │  each phase = deterministic Python orchestrating focused, single-purpose agents        │
 │                                                                                        │
 │ adw_modules: state · agent(runner, router, budget, cache) · security · gates · repair  │
@@ -36,7 +36,8 @@ crosses a typed boundary (`utils.parse_json` + pydantic) before code acts on it.
 | E2E | start app on the run's port, collect results | `/test_e2e` via Playwright MCP, `/resolve_failed_e2e_test` |
 | Review | diff to file, loop control, gate verdict | `/review`, `/patch` for each blocker |
 | Red team | test-tampering diff scan, ruff `S` rules, secret scan | `/redteam` adversarial audit |
-| Document | KPIs, lesson files | `/document`, `/reflect` |
+| Re-verify | every gate records the commit it judged; if review patches changed code, re-run test and review until no verdict is stale | same as test and review |
+| Document | KPIs, staged lessons (`agent/lessons/pending/`) | `/document`, `/reflect` |
 | Ship | five locks, server-side squash merge | none |
 
 ## State and artifacts
@@ -49,7 +50,8 @@ agent/
   runs/<adw_id>/<agent_name>/      prompt.md + raw_output.jsonl per agent call (names unique per iteration)
   runs/<adw_id>/test_reports/      junit.xml
   reports/<adw_id>/                domain pack outputs: report.md, findings.json, findings.sarif
-  lessons/*.md + INDEX.md          durable lessons (one per file)
+  lessons/*.md + INDEX.md          approved lessons (one per file)
+  lessons/pending/*.md             lessons proposed by /reflect, awaiting human approval
   kpis.jsonl → agentic_kpis.md     KPI rows, rendered table
   cache.db                         read-only prompt cache
 trees/<adw_id>/                    git worktree + .ports.env (ports, per-run DB path)
@@ -67,8 +69,11 @@ trees/<adw_id>/                    git worktree + .ports.env (ports, per-run DB 
 
 `infra/terraform/modules/mcp-connector` renders an MCP server manifest in the exact JSON shape
 `core/mcp_gov/manifest.py` scans, with variable validations and a `terraform_data.guard`
-precondition block mirroring the scanner's own rules (wildcard/admin scopes, plaintext transport,
-broad audience, missing review ticket outside `dev`). A bad connector config fails at
+precondition block mirroring the scanner's own rules (wildcard/admin scopes, plaintext, loopback or
+metadata URLs, broad audience, duplicate tools, open input schemas, a missing or placeholder review
+ticket outside `dev`). The live root keeps one Terraform workspace and state per environment, and a
+guard refuses a plan whose workspace doesn't match `var.environment`. Tool `input_schema` is a JSON
+string set with `jsonencode`. A bad connector config fails at
 `terraform plan` before a human ever runs the scanner — and the scanner still runs as an
 independent second gate afterward, so a bypass of one layer doesn't silently pass. It never
 registers, enables or talks to a real connector; the only provider is `hashicorp/local`, rendering
@@ -78,5 +83,5 @@ JSON files to disk. See [`infra/terraform/README.md`](../../infra/terraform/READ
 
 - **New workflow phase**: write `run(adw_id) -> bool` in `adws/adw_<name>_iso.py` and wrap the body in `workflow_ops.phase(...)`. Record a `GateResult` and add it to `PHASES` in `adw_sdlc_iso.py`.
 - **New agent command**: add `.claude/commands/<name>.md` with an exact output contract, register it in `model_router.COMMAND_CLASS`, and add a `mock_agent` handler.
-- **New domain tool**: add `core/<pack>/<tool>.py` returning `AnalysisReport`, register it in `core/registry.py`, add a fixture and tests.
+- **New domain tool**: add `core/<pack>/<tool>.py` returning `AnalysisReport`, register it in its `Pack` entry in `PACKS` (`core/registry.py`), add a fixture and tests. A new pack also needs its name in `PackName` (`core/common.py`); a test asserts the two agree.
 - **New domain**: add a `DomainSpec` in `adw_modules/domains.py` with its ship policy.

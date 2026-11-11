@@ -61,4 +61,4 @@ Use `specs/templates/gcp_sre_incident.md` as the incident record.
 2. Log signature: add a `_sig(...)` to `SIGNATURES` in `core/gcp_sre/logs.py`. Set `min_count` for symptoms that only matter in bulk. Test it in `core/tests/test_sre_logs.py`.
 3. Node.js classification: add a branch in `_classify` in `core/gcp_sre/nodetrace.py`, or a marker in `_MARKERS` for process-level messages that have no stack.
 4. New log format: add a loader path in `core/gcp_sre/events.py` that yields `Event` records. All analyzers then work on it unchanged.
-5. New tool: write `analyze_file(path, **opts) -> AnalysisReport`, register it in `PACK_TOOLS["gcp_sre"]` and `_detect_gcp_sre`. If it should also run on files another tool detects, add it to `COMPANIONS`.
+5. New tool: write `analyze_file(path, **opts) -> AnalysisReport`, register it in the `Pack` entry for `gcp_sre` in `PACKS` (`core/registry.py`: its `tools` map and its detector). If it should also run on files another tool detects, add it to `COMPANIONS`.

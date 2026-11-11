@@ -29,7 +29,8 @@ Any critical or high finding fails the gate. The agent cannot suppress scanner f
 **Files:** `adws/adw_modules/memory.py`, `.claude/commands/reflect.md`, `adw_document_iso.reflect`
 
 - After any run that needed a repair, failed a gate, or needed more than one review round, `/reflect` extracts 0–3 durable lessons as JSON.
-- Code writes one file per lesson under `agent/lessons/`. Files are deduplicated by slug and the index is rebuilt.
+- Code stages one file per lesson under `agent/lessons/pending/`. A human promotes it with `uv run python -m adws.adw_modules.memory approve <slug>` (or `reject`); approved files are deduplicated by slug and the index is rebuilt.
+- Lessons reach the planner fenced as untrusted data: a poisoned lesson would otherwise be a prompt injection that persists across runs.
 - Planning calls `memory.relevant()`, which scores by tag and keyword overlap, and hands the top-k lessons to the planner.
 
 **Deliberately not a vector DB.** Files are diffable, reviewable in PRs, and trivially deletable when wrong. Move to embeddings only when you have more than a few hundred lessons and retrieval quality measurably suffers.

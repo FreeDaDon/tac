@@ -107,8 +107,10 @@ secrets, authz gaps, insecure defaults and **spec cheating** (weakened tests, ha
 Critical/high findings block.
 
 ### 14. Lessons memory
-`/reflect` turns failures into 0–3 durable lessons in `agent/lessons/` (one per file, frontmatter
-`name`/`description`/`tags`). Planners receive only the lessons relevant to the task. Wrong lessons get
+`/reflect` turns failures into 0–3 proposed lessons in `agent/lessons/pending/` (one per file, frontmatter
+`name`/`description`/`tags`). They are model output shaped by attacker-reachable text, so a human
+approves each one (`uv run python -m adws.adw_modules.memory approve <slug>`) before it moves to
+`agent/lessons/`. Planners receive only approved, relevant lessons, fenced as data. Wrong lessons get
 deleted, not accumulated.
 
 ### 15. Read-only cache
@@ -126,8 +128,9 @@ locks (`adws/adw_ship_iso.py`).
 was overkill (`/classify_issue`): a schema-validated choice + confidence instead of parsing a
 "Return ONLY ..." string. It is never security-critical and never ship-blocking — it cannot gate a
 test, a red-team finding, or a merge, and a low-confidence or failed Jev call always falls back to
-the full agent classifier rather than guessing. The mock backend (offline, deterministic, zero
-cost) is the default; the live backend is opt-in only via `JEV_BACKEND=typesafe`/`openrouter`/`live`
+the full agent classifier rather than guessing. The mock backend (an offline keyword stand-in for the
+wire contract) is the default and answers only in `TAC_AGENT_RUNNER=mock` runs: real runs fall
+through to the agent classifier unless a live backend is configured; the live backend is opt-in only via `JEV_BACKEND=typesafe`/`openrouter`/`live`
 plus the matching API key, and a malformed live response is a raised error, never a silent
 pass-through. `triage_findings()` extends this to `/redteam` (re-orders the deterministic scanner
 findings before they reach the agent's input file) and `/review` (re-orders the agent's own

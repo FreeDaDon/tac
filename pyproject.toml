@@ -18,6 +18,7 @@ dev = [
     "ruff>=0.6",
     "mypy>=1.11",
     "types-PyYAML",
+    "httpx2>=2.16.0",
 ]
 
 [build-system]
@@ -60,10 +61,14 @@ exclude = ["trees/", "agent/", "app/client/"]
 lint = ["uv", "run", "ruff", "check", "."]
 types = ["uv", "run", "mypy", "adws", "core"]
 unit = ["uv", "run", "pytest", "-q", "-p", "no:cacheprovider"]
-client = ["bash", "-c", "cd app/client && npm ci --silent --no-audit --no-fund && npx tsc --noEmit && npm run build --silent"]
+client = ["bash", "-c", "cd app/client && npm ci --silent --no-audit --no-fund && npx tsc --noEmit && npm test --silent && npm run build --silent"]
 
 [tool.tac]
 e2e_specs = ".claude/commands/e2e"
 max_test_repairs = 4
 max_e2e_repairs = 2
 max_review_patches = 2
+# A skipped test fails the unit gate unless its JUnit node id is listed here.
+allowed_skips = []
+# Files that may change after the gates ran without making their verdicts stale (the documenter's output).
+post_gate_paths = ["docs/features/*", ".claude/commands/conditional_docs.md"]
