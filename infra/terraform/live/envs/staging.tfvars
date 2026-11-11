@@ -1,3 +1,3 @@
 environment     = "staging"
-review_ticket   = "AICR-0000"
+review_ticket   = "SET-REAL-AICR-TICKET"
 approved_groups = ["grp-ai-docs-staging"]

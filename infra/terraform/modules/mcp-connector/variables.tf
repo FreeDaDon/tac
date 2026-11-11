@@ -29,12 +29,20 @@ variable "environment" {
 }
 
 variable "server_url" {
-  description = "Remote MCP endpoint. HTTPS only."
+  description = "Remote MCP endpoint. HTTPS to a DNS hostname only: no IP literal, no userinfo, no loopback or metadata host, in any environment."
   type        = string
 
+  # The host must be dotted DNS labels ending in a TLD that starts with a letter. That rejects every IP literal
+  # (dotted, decimal 2130706433, hex, octal, IPv6 brackets), so 127/8, 10/8, 172.16/12, 192.168/16 and 169.254/16
+  # cannot be reached by address, and a user@ prefix cannot hide the real host.
   validation {
-    condition     = can(regex("^https://[^/]+", var.server_url)) && !can(regex("^https://(localhost|127\\.|0\\.0\\.0\\.0|\\[::1\\])", var.server_url))
-    error_message = "server_url must be an https:// URL that is not a loopback address."
+    condition     = can(regex("^https://([a-z0-9]([a-z0-9-]*[a-z0-9])?\\.)+[a-z]([a-z0-9-]*[a-z0-9])?(:[0-9]{1,5})?([/?#][^\\s]*)?$", lower(var.server_url)))
+    error_message = "server_url must be https:// followed by a dotted DNS hostname (no IP literal, no user@ part, no bare single-label host), then an optional port and path (mirrors MCP-TRANSPORT-PLAINTEXT)."
+  }
+
+  validation {
+    condition     = !can(regex("^https://([a-z0-9.-]+\\.)?(localhost|localhost\\.localdomain|metadata\\.google\\.internal)([:/?#]|$)", lower(var.server_url)))
+    error_message = "server_url must not name a loopback or cloud metadata host."
   }
 }
 
@@ -44,8 +52,13 @@ variable "publisher" {
 }
 
 variable "repository" {
-  description = "Source repository, for provenance."
+  description = "Source repository, for provenance. HTTPS, with no credentials in the URL."
   type        = string
+
+  validation {
+    condition     = can(regex("^https://([a-z0-9]([a-z0-9-]*[a-z0-9])?\\.)+[a-z]([a-z0-9-]*[a-z0-9])?(:[0-9]{1,5})?/[^\\s?#]+$", lower(var.repository)))
+    error_message = "repository must be an https:// URL with a DNS host and a path, and no user@ credentials."
+  }
 }
 
 variable "oauth_scopes" {
@@ -58,8 +71,18 @@ variable "oauth_scopes" {
   }
 
   validation {
-    condition     = alltrue([for s in var.oauth_scopes : !can(regex("(^|[.:/_-])(\\*|admin|all|full[_-]?access|owner|root)($|[.:/_-])", lower(s)))])
-    error_message = "oauth_scopes contains a wildcard or admin-class scope (mirrors MCP-SCOPE-BROAD)."
+    condition     = alltrue([for s in var.oauth_scopes : !strcontains(s, "*")])
+    error_message = "oauth_scopes must not contain a wildcard anywhere (mirrors MCP-SCOPE-BROAD)."
+  }
+
+  validation {
+    condition     = alltrue([for s in var.oauth_scopes : !can(regex("(^|[.:/_-])(admin|administrator|all|full[_-]?access|owner|root|superuser)($|[.:/_-])|(^|[.:/_-])cloud-platform/?$|(^|/)\\.default$", lower(trimspace(s))))])
+    error_message = "oauth_scopes contains an admin-class scope, cloud-platform, or a Graph .default scope (mirrors MCP-SCOPE-BROAD)."
+  }
+
+  validation {
+    condition     = alltrue([for s in var.oauth_scopes : !contains(["https://mail.google.com", "https://www.googleapis.com/auth/drive"], trimsuffix(lower(trimspace(s)), "/"))])
+    error_message = "oauth_scopes contains a whole-account scope (full Gmail or full Drive) (mirrors MCP-SCOPE-BROAD)."
   }
 }
 
@@ -84,18 +107,29 @@ variable "approved_groups" {
 }
 
 variable "tools" {
-  description = "Tools the server exposes, as reviewed by a human."
+  description = "Tools the server exposes, as reviewed by a human. input_schema is a JSON string (use jsonencode) so tools can carry differently shaped schemas."
   type = list(object({
     name            = string
     description     = string
     read_only       = bool
+    open_world      = optional(bool, true)
     required_scopes = list(string)
-    input_schema    = optional(any, { type = "object", additionalProperties = false, properties = {} })
+    input_schema    = optional(string, "{\"type\":\"object\",\"additionalProperties\":false,\"properties\":{}}")
   }))
 
   validation {
     condition     = length(var.tools) > 0 && length(var.tools) <= 25
     error_message = "Declare between 1 and 25 tools (MCP-TOOL-COUNT)."
+  }
+
+  validation {
+    condition     = length(distinct([for t in var.tools : t.name])) == length(var.tools)
+    error_message = "Tool names must be unique."
+  }
+
+  validation {
+    condition     = alltrue([for t in var.tools : try(jsondecode(t.input_schema).type == "object" && jsondecode(t.input_schema).additionalProperties == false, false)])
+    error_message = "Each tool's input_schema must be a JSON object schema with \"type\": \"object\" and \"additionalProperties\": false."
   }
 }
 
@@ -110,9 +144,14 @@ variable "data_classification" {
 }
 
 variable "review_ticket" {
-  description = "Intake and review ticket id. Required outside dev."
+  description = "Intake and review ticket id (AICR-<number>). Required outside dev."
   type        = string
   default     = ""
+
+  validation {
+    condition     = var.review_ticket == "" || can(regex("^AICR-[1-9][0-9]*$", var.review_ticket))
+    error_message = "review_ticket must be a real AICR-<number> ticket. Placeholders such as AICR-0000 are rejected."
+  }
 }
 
 variable "output_dir" {
