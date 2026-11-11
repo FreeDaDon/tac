@@ -128,10 +128,19 @@ document.addEventListener("keydown", (ev) => {
   if (ev.key === "Escape" && state.selected) closeDrawer();
 });
 
+async function refreshRuns(): Promise<void> {
+  const [runs, budget] = await Promise.all([settle(api.runs()), settle(api.budget())]);
+  state.runs = runs ?? state.runs;
+  state.budget = budget ?? state.budget;
+  slots.kpis.replaceChildren(renderKpis(state.kpis, state.budget, state.runs, state.cache));
+  slots.runs.replaceChildren(renderRuns(state.runs, state.selected, selectRun));
+  if (state.selected) void loadDetail(state.selected);
+}
+
 let refreshTimer: number | undefined;
 function refreshSoon(): void {
   window.clearTimeout(refreshTimer);
-  refreshTimer = window.setTimeout(() => void refresh(), 1500);
+  refreshTimer = window.setTimeout(() => void refreshRuns(), 1500);
 }
 
 const socket = new LiveSocket({
@@ -145,7 +154,7 @@ const socket = new LiveSocket({
       timeline.setInitial(msg.data);
     } else {
       timeline.push(msg.data);
-      refreshSoon(); // phase/gate/cost changes land in state.json; re-read it shortly
+      refreshSoon(); // phase/gate/cost changes land in state.json; the 15s poll covers the rest
     }
   },
 });

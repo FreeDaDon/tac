@@ -1,12 +1,17 @@
 from __future__ import annotations
 
 import json
+import socket
 import sqlite3
 import sys
+import threading
+import time
 from collections.abc import Iterator
 from pathlib import Path
 
 import pytest
+import uvicorn
+from fastapi import FastAPI
 from fastapi.testclient import TestClient
 
 SERVER_DIR = Path(__file__).resolve().parents[1]
@@ -18,6 +23,7 @@ from dashboard.main import create_app  # noqa: E402
 RUN_A = "a1b2c3d4"
 RUN_B = "deadbeef"
 RUN_CORRUPT = "0badf00d"
+TOKEN = "s3cret-token"
 
 KPIS_MD = """# Agentic KPIs
 
@@ -125,5 +131,29 @@ def client(root: Path, monkeypatch: pytest.MonkeyPatch) -> Iterator[TestClient]:
 
 @pytest.fixture()
 def auth_client(root: Path, monkeypatch: pytest.MonkeyPatch) -> Iterator[TestClient]:
-    with _client(root, monkeypatch, "s3cret-token") as c:
+    with _client(root, monkeypatch, TOKEN) as c:
         yield c
+
+
+@pytest.fixture()
+def live_server(root: Path, monkeypatch: pytest.MonkeyPatch) -> Iterator[tuple[str, FastAPI]]:
+    """The token-protected app served by a real uvicorn on an ephemeral loopback port."""
+    monkeypatch.delenv("TAC_DASHBOARD_HOST", raising=False)
+    monkeypatch.setenv("TAC_DASHBOARD_TOKEN", TOKEN)
+    app = create_app(root=root, db_path=root / "agent" / "dashboard.db")
+    sock = socket.socket()
+    sock.bind(("127.0.0.1", 0))
+    port = sock.getsockname()[1]
+    server = uvicorn.Server(uvicorn.Config(app, log_config=None, lifespan="off"))
+    thread = threading.Thread(target=server.run, kwargs={"sockets": [sock]}, daemon=True)
+    thread.start()
+    deadline = time.monotonic() + 10
+    while not server.started:
+        assert time.monotonic() < deadline, "uvicorn did not start"
+        time.sleep(0.02)
+    try:
+        yield f"http://127.0.0.1:{port}", app
+    finally:
+        server.should_exit = True
+        thread.join(10)
+        sock.close()

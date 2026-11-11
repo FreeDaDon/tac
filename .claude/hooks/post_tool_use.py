@@ -6,8 +6,8 @@
 """PostToolUse telemetry. Best effort, never blocks: always exits 0.
 
 POSTs {source_app, session_id, hook_event_type, payload:{tool_name, input}} to
-$TAC_DASHBOARD_URL/api/hook-events with a 1s timeout. Input is truncated and never
-includes file contents (Write/Edit bodies are dropped).
+$TAC_DASHBOARD_URL/api/hook-events with a 1s timeout, authenticated with $TAC_DASHBOARD_TOKEN
+when set. Input is truncated and never includes file contents (Write/Edit bodies are dropped).
 """
 
 from __future__ import annotations
@@ -48,10 +48,14 @@ def main() -> None:
                 "input": truncated_input(payload.get("tool_input")),
             },
         }
+        headers = {"Content-Type": "application/json"}
+        token = os.environ.get("TAC_DASHBOARD_TOKEN")
+        if token:
+            headers["Authorization"] = f"Bearer {token}"
         req = urllib.request.Request(  # noqa: S310 - scheme checked above, URL is operator-configured
             f"{url}/api/hook-events",
             data=json.dumps(body).encode(),
-            headers={"Content-Type": "application/json"},
+            headers=headers,
             method="POST",
         )
         urllib.request.urlopen(req, timeout=1).close()  # noqa: S310 - scheme checked above

@@ -8,7 +8,8 @@ export interface LiveSocketOptions {
   onState: (state: ConnState) => void;
 }
 
-/** WebSocket with exponential backoff reconnect (1s -> 30s, jittered). */
+/** WebSocket with exponential backoff reconnect (1s -> 30s, jittered). The token rides in the
+ * subprotocol list, never the URL, so it stays out of access logs. */
 export class LiveSocket {
   private ws: WebSocket | null = null;
   private attempt = 0;
@@ -30,16 +31,14 @@ export class LiveSocket {
 
   private url(): string {
     const proto = window.location.protocol === "https:" ? "wss:" : "ws:";
-    const url = new URL(`${proto}//${window.location.host}/ws/events`);
-    if (this.opts.token) url.searchParams.set("token", this.opts.token);
-    return url.toString();
+    return `${proto}//${window.location.host}/ws/events`;
   }
 
   private open(): void {
     this.opts.onState("connecting");
     let ws: WebSocket;
     try {
-      ws = new WebSocket(this.url());
+      ws = this.opts.token ? new WebSocket(this.url(), ["bearer", this.opts.token]) : new WebSocket(this.url());
     } catch {
       this.schedule();
       return;

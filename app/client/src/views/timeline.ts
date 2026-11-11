@@ -37,20 +37,26 @@ function row(e: DashEvent): HTMLElement {
   );
 }
 
-/** Live event feed, newest first. Controls are created once so re-renders never steal focus. */
+/** Live event feed, newest first. Controls are created once so re-renders never steal focus.
+ * Renders at most once per animation frame; new events are prepended unless the filters changed. */
 export class TimelineView {
   readonly el: HTMLElement;
   private events: DashEvent[] = [];
   private buffer: DashEvent[] = [];
+  private fresh: DashEvent[] = [];
+  private floor = 0;
   private paused = false;
+  private rebuild = true;
+  private renderedFilter = "";
+  private frame = 0;
   private readonly adwSel = h("select", { attrs: { "aria-label": "Filter by adw_id" } });
   private readonly typeSel = h("select", { attrs: { "aria-label": "Filter by event type" } });
   private readonly pauseBtn = h("button", { class: "btn" }, "Pause");
   private readonly list = h("div", { class: "events-wrap" });
 
   constructor() {
-    this.adwSel.addEventListener("change", () => this.render());
-    this.typeSel.addEventListener("change", () => this.render());
+    this.adwSel.addEventListener("change", () => this.schedule());
+    this.typeSel.addEventListener("change", () => this.schedule());
     this.pauseBtn.addEventListener("click", () => this.togglePause());
     this.el = h(
       "section",
@@ -61,13 +67,18 @@ export class TimelineView {
     this.render();
   }
 
+  /** The server snapshot. Live events with an id at or below its newest were already in it. */
   setInitial(events: DashEvent[]): void {
     this.events = [...events].sort((a, b) => b.id - a.id).slice(0, MAX_EVENTS);
+    this.floor = this.events[0]?.id ?? 0;
     this.buffer = [];
-    this.render();
+    this.fresh = [];
+    this.rebuild = true;
+    this.schedule();
   }
 
   push(e: DashEvent): void {
+    if (e.id <= this.floor) return;
     if (this.paused) {
       this.buffer.unshift(e);
       this.updatePauseLabel();
@@ -75,16 +86,37 @@ export class TimelineView {
     }
     this.events.unshift(e);
     this.events.length = Math.min(this.events.length, MAX_EVENTS);
-    this.render();
+    this.addFresh([e]);
+    this.schedule();
   }
 
   private togglePause(): void {
     this.paused = !this.paused;
     if (!this.paused && this.buffer.length) {
       this.events = [...this.buffer, ...this.events].slice(0, MAX_EVENTS);
+      this.addFresh([...this.buffer].reverse());
       this.buffer = [];
     }
-    this.render();
+    this.updatePauseLabel();
+    this.schedule();
+  }
+
+  /** Oldest first. Past a screenful a rebuild is cheaper than tracking them (e.g. a hidden tab gets no frames). */
+  private addFresh(events: DashEvent[]): void {
+    if (this.rebuild) return;
+    this.fresh.push(...events);
+    if (this.fresh.length > MAX_RENDERED) {
+      this.fresh = [];
+      this.rebuild = true;
+    }
+  }
+
+  private schedule(): void {
+    if (this.frame) return;
+    this.frame = window.requestAnimationFrame(() => {
+      this.frame = 0;
+      this.render();
+    });
   }
 
   private updatePauseLabel(): void {
@@ -98,11 +130,25 @@ export class TimelineView {
     this.updatePauseLabel();
     const adw = this.adwSel.value;
     const type = this.typeSel.value;
-    const shown = this.events.filter((e) => (!adw || e.adw_id === adw) && (!type || e.event_type === type));
-    this.list.replaceChildren(
-      shown.length
-        ? h("ul", { class: "events" }, ...shown.slice(0, MAX_RENDERED).map(row))
-        : empty("No events yet. ADWs POST to /api/events when TAC_DASHBOARD_URL is set."),
-    );
+    const filter = `${adw}\n${type}`;
+    const matches = (e: DashEvent): boolean => (!adw || e.adw_id === adw) && (!type || e.event_type === type);
+    const ul = this.list.firstElementChild;
+    if (!this.rebuild && filter === this.renderedFilter && ul instanceof HTMLUListElement) {
+      const rows = this.fresh.filter(matches).map(row).reverse();
+      if (rows.length) {
+        ul.prepend(...rows);
+        while (ul.childElementCount > MAX_RENDERED) ul.lastElementChild?.remove();
+      }
+    } else {
+      const shown = this.events.filter(matches);
+      this.list.replaceChildren(
+        shown.length
+          ? h("ul", { class: "events" }, ...shown.slice(0, MAX_RENDERED).map(row))
+          : empty("No events yet. ADWs POST to /api/events when TAC_DASHBOARD_URL is set."),
+      );
+    }
+    this.fresh = [];
+    this.rebuild = false;
+    this.renderedFilter = filter;
   }
 }

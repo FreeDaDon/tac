@@ -32,7 +32,10 @@ async function get<T>(path: string, params?: Record<string, string | number | un
   for (const [k, v] of Object.entries(params ?? {})) {
     if (v !== undefined && v !== "") url.searchParams.set(k, String(v));
   }
-  const res = await fetch(url, { headers: { Accept: "application/json" } });
+  const headers: Record<string, string> = { Accept: "application/json" };
+  const token = authToken();
+  if (token) headers["Authorization"] = `Bearer ${token}`;
+  const res = await fetch(url, { headers });
   if (!res.ok) throw new ApiError(res.status, `${res.status} ${res.statusText} for ${path}`);
   return (await res.json()) as T;
 }

@@ -12,6 +12,7 @@ from adws.adw_modules.data_types import ADWStateData, GateReport
 ADW_ID_RE = re.compile(r"^[a-f0-9]{8}$")
 MAX_EVENTS_BYTES = 5 * 1024 * 1024
 MAX_EVENTS = 2000
+MAX_STATE_BYTES = 1024 * 1024
 
 
 def is_valid_adw_id(adw_id: str) -> bool:
@@ -33,14 +34,38 @@ def _as_dict(value: Any) -> dict[str, Any]:
     return value if isinstance(value, dict) else {}
 
 
-def read_state(root: Path, adw_id: str) -> tuple[dict[str, Any] | None, str | None]:
-    """Return (state dict, error). Falls back to the raw JSON when it fails schema validation."""
-    path = runs_dir(root) / adw_id / "state.json"
-    if not path.is_file():
-        return None, "state.json missing"
+def run_path(root: Path, adw_id: str) -> Path | None:
+    """Resolved agent/runs/<adw_id>, or None when missing or a symlink pointing outside agent/runs."""
+    if not is_valid_adw_id(adw_id):
+        return None
+    base = runs_dir(root).resolve()
+    real = (base / adw_id).resolve()
+    return real if real.is_relative_to(base) and real.is_dir() else None
+
+
+def _read_capped(run: Path, name: str, limit: int) -> tuple[str | None, str | None]:
+    """(text, error) for run/<name>; refuses files that resolve outside the run dir or exceed limit."""
     try:
-        raw = json.loads(path.read_text(encoding="utf-8", errors="replace"))
-    except (OSError, json.JSONDecodeError) as exc:
+        real = (run / name).resolve()
+        if not real.is_file():
+            return None, f"{name} missing"
+        if not real.is_relative_to(run):
+            return None, f"{name} points outside the run dir"
+        if real.stat().st_size > limit:
+            return None, f"{name} exceeds {limit} bytes"
+        return real.read_text(encoding="utf-8", errors="replace"), None
+    except OSError as exc:
+        return None, f"unreadable {name}: {exc.__class__.__name__}"
+
+
+def read_state(run: Path, adw_id: str) -> tuple[dict[str, Any] | None, str | None]:
+    """Return (state dict, error). Falls back to the raw JSON when it fails schema validation."""
+    text, error = _read_capped(run, "state.json", MAX_STATE_BYTES)
+    if text is None:
+        return None, error
+    try:
+        raw = json.loads(text)
+    except json.JSONDecodeError as exc:
         return None, f"unreadable state.json: {exc.__class__.__name__}"
     if not isinstance(raw, dict):
         return None, "state.json is not an object"
@@ -51,15 +76,14 @@ def read_state(root: Path, adw_id: str) -> tuple[dict[str, Any] | None, str | No
         return raw, "state.json failed schema validation"
 
 
-def gate_report(root: Path, adw_id: str, state: dict[str, Any] | None) -> dict[str, Any] | None:
+def gate_report(run: Path, state: dict[str, Any] | None) -> dict[str, Any] | None:
     report = (state or {}).get("gate_report")
     if not report:
-        path = runs_dir(root) / adw_id / "gate_report.json"
-        if path.is_file():
-            try:
-                report = json.loads(path.read_text(encoding="utf-8", errors="replace"))
-            except (OSError, json.JSONDecodeError):
-                report = None
+        text, _ = _read_capped(run, "gate_report.json", MAX_STATE_BYTES)
+        try:
+            report = json.loads(text) if text is not None else None
+        except json.JSONDecodeError:
+            report = None
     if not isinstance(report, dict):
         return None
     try:
@@ -80,13 +104,13 @@ def gates_summary(report: dict[str, Any] | None) -> dict[str, Any]:
     return {**counts, "total": len(gates), "all_green": all_green}
 
 
-def summarize(root: Path, adw_id: str) -> dict[str, Any]:
-    state, error = read_state(root, adw_id)
+def summarize(run: Path, adw_id: str) -> dict[str, Any]:
+    state, error = read_state(run, adw_id)
     s = state or {}
     usage = _as_dict(s.get("usage"))
     cost = _num(usage.get("cost_usd"))
     budget = _num(s.get("budget_usd"), 5.0)
-    report = gate_report(root, adw_id, state)
+    report = gate_report(run, state)
     phases = _as_dict(s.get("phases"))
     raw_adws = s.get("all_adws")
     all_adws: list[Any] = raw_adws if isinstance(raw_adws, list) else []
@@ -113,23 +137,55 @@ def summarize(root: Path, adw_id: str) -> dict[str, Any]:
     }
 
 
+def _stamp(run: Path) -> tuple[int, ...]:
+    out: list[int] = []
+    for name in ("state.json", "gate_report.json"):
+        try:
+            st = (run / name).stat()
+            out += [st.st_mtime_ns, st.st_size, st.st_ino]
+        except OSError:
+            out += [-1, -1, -1]
+    return tuple(out)
+
+
+_summaries: dict[Path, tuple[tuple[int, ...], dict[str, Any]]] = {}
+
+
+def summary(root: Path, adw_id: str) -> dict[str, Any] | None:
+    """summarize(), re-parsed only when state.json or gate_report.json changed on disk."""
+    run = run_path(root, adw_id)
+    if run is None:
+        return None
+    stamp = _stamp(run)
+    cached = _summaries.get(run)
+    if cached and cached[0] == stamp:
+        return cached[1]
+    result = summarize(run, adw_id)
+    _summaries[run] = (stamp, result)
+    return result
+
+
 def list_run_ids(root: Path) -> list[str]:
     base = runs_dir(root)
     if not base.is_dir():
         return []
-    return sorted(p.name for p in base.iterdir() if p.is_dir() and is_valid_adw_id(p.name))
+    return sorted(p.name for p in base.iterdir() if run_path(root, p.name))
 
 
 def list_runs(root: Path) -> list[dict[str, Any]]:
-    runs = [summarize(root, adw_id) for adw_id in list_run_ids(root)]
+    runs = [s for adw_id in list_run_ids(root) if (s := summary(root, adw_id))]
+    base = runs_dir(root).resolve()
+    live = {base / r["adw_id"] for r in runs}
+    for path in [p for p in list(_summaries) if p.parent == base and p not in live]:
+        _summaries.pop(path, None)
     runs.sort(key=lambda r: str(r.get("updated") or ""), reverse=True)
     return runs
 
 
-def read_events(root: Path, adw_id: str, limit: int = MAX_EVENTS) -> list[dict[str, Any]]:
+def read_events(run: Path, limit: int = MAX_EVENTS) -> list[dict[str, Any]]:
     """Parse events.jsonl (oldest first), skipping corrupt lines; large files are tailed."""
-    path = runs_dir(root) / adw_id / "events.jsonl"
-    if not path.is_file():
+    path = (run / "events.jsonl").resolve()
+    if not path.is_relative_to(run) or not path.is_file():
         return []
     try:
         with open(path, "rb") as fh:
@@ -157,22 +213,23 @@ def read_events(root: Path, adw_id: str, limit: int = MAX_EVENTS) -> list[dict[s
 
 
 def run_detail(root: Path, adw_id: str) -> dict[str, Any] | None:
-    if not (runs_dir(root) / adw_id).is_dir():
+    run = run_path(root, adw_id)
+    if run is None:
         return None
-    state, _ = read_state(root, adw_id)
+    state, _ = read_state(run, adw_id)
     return {
-        "summary": summarize(root, adw_id),
+        "summary": summary(root, adw_id),
         "state": state,
-        "gate_report": gate_report(root, adw_id, state),
-        "events": read_events(root, adw_id),
+        "gate_report": gate_report(run, state),
+        "events": read_events(run),
     }
 
 
-def budget(root: Path) -> dict[str, Any]:
+def budget(runs: list[dict[str, Any]]) -> dict[str, Any]:
     rows = []
     total_cost = total_budget = 0.0
     over = warn = 0
-    for r in list_runs(root):
+    for r in runs:
         frac = r["budget_fraction"]
         status = "over" if frac >= 1 else "warn" if frac >= 0.8 else "ok"
         over += status == "over"
