@@ -64,6 +64,7 @@ cd app/client && npm ci && npx tsc --noEmit && npm test && npm run build
 | GET | `/api/worktrees` | `trees/<adw_id>/.ports.env` with a live listening check per port |
 | GET | `/api/lessons` | `agent/lessons/*.md` frontmatter (`name`, `description`, `tags`) and body |
 | GET | `/api/cache` | `agent/cache.db` entries and hit counts (read-only), per command |
+| GET | `/api/version` | `{name, version}` from pyproject.toml, read once at startup and cached |
 | GET | `/api/docs`, `/api/openapi.json` | OpenAPI UI and schema. With a token set they need the header too, so the browser UI only works without one |
 
 Corrupt or partial files never break an endpoint: a malformed or oversized (over 1 MB) `state.json` shows up as a run with an `error` field, bad `events.jsonl` lines are skipped, and large event files are tailed (last 5 MB).

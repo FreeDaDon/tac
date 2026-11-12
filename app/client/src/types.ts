@@ -11,6 +11,11 @@ export interface DashEvent {
   timestamp: string;
 }
 
+export interface Version {
+  name: string;
+  version: string;
+}
+
 export interface Health {
   status: string;
   root: string;

@@ -30,6 +30,7 @@ from adws.adw_modules.data_types import TelemetryEvent  # noqa: E402
 from . import kpis as kpis_mod  # noqa: E402
 from . import lessons as lessons_mod  # noqa: E402
 from . import runs as runs_mod  # noqa: E402
+from . import version as version_mod  # noqa: E402
 from . import worktrees as worktrees_mod  # noqa: E402
 from .store import EventStore  # noqa: E402
 from .ws import TRY_AGAIN_LATER, ConnectionManager  # noqa: E402
@@ -235,6 +236,7 @@ def create_app(root: Path | None = None, db_path: Path | None = None) -> FastAPI
     store = EventStore(settings.db_path, max_rows=settings.max_events)
     manager = ConnectionManager(max_clients=settings.max_ws_clients)
     _install_log_redaction()
+    version_info = {"name": "tac", **version_mod.load_version(settings.root)}
 
     app = FastAPI(title="TAC ADW Control Plane", version="0.1.0", docs_url="/api/docs", redoc_url=None,
                   openapi_url="/api/openapi.json")
@@ -344,6 +346,10 @@ def create_app(root: Path | None = None, db_path: Path | None = None) -> FastAPI
     @app.get("/api/worktrees")
     def get_worktrees() -> list[dict[str, Any]]:
         return worktrees_mod.list_worktrees(settings.root)
+
+    @app.get("/api/version")
+    def get_version() -> dict[str, str]:
+        return version_info
 
     @app.get("/api/lessons")
     def get_lessons() -> list[dict[str, Any]]:

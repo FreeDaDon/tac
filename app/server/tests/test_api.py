@@ -15,6 +15,7 @@ from dashboard import runs as runs_mod
 from dashboard import store as store_mod
 from dashboard.kpis import parse_tables
 from dashboard.lessons import parse_lesson
+from dashboard.main import create_app
 from dashboard.store import EventStore
 from dashboard.ws import ConnectionManager
 from fastapi import WebSocket
@@ -269,6 +270,20 @@ def test_health_counts_events(client: TestClient) -> None:
     for _ in range(3):
         client.post("/api/events", json=EVENT)
     assert client.get("/api/health").json()["events"] == 3
+def test_version_normal(client: TestClient) -> None:
+    r = client.get("/api/version")
+    assert r.status_code == 200
+    assert r.json() == {"name": "tac", "version": "9.9.9-test"}
+
+
+def test_version_missing_pyproject(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.delenv("TAC_DASHBOARD_TOKEN", raising=False)
+    monkeypatch.delenv("TAC_DASHBOARD_HOST", raising=False)
+    app = create_app(root=tmp_path, db_path=tmp_path / "dashboard.db")
+    with TestClient(app, base_url="http://localhost") as c:
+        r = c.get("/api/version")
+        assert r.status_code == 200
+        assert r.json() == {"name": "tac", "version": "unknown"}
 
 
 def test_lessons(client: TestClient, root: Path) -> None:
