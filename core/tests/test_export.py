@@ -61,13 +61,25 @@ def test_sarif_structure():
         assert result["message"]["text"]
     loc = run["results"][0]["locations"][0]["physicalLocation"]
     assert loc == {"artifactLocation": {"uri": "src/a.py"}, "region": {"startLine": 12}}
-    assert "locations" not in run["results"][1] and "locations" not in run["results"][3]
+    fallback = [r["locations"][0]["physicalLocation"] for r in (run["results"][1], run["results"][3])]
+    assert fallback == [{"artifactLocation": {"uri": "repo"}, "region": {"startLine": 1}}] * 2
     assert sarif["runs"][1]["results"] == [] and sarif["runs"][1]["tool"]["driver"]["rules"] == []
     json.loads(to_sarif_json(sample_reports()))
 
 
+def test_sarif_every_result_has_a_location_and_paths_may_contain_spaces():
+    findings = [Finding(rule_id="R1", title="t", severity="high", category="c", location="My Docs/a b.py:4"),
+                Finding(rule_id="R2", title="t", severity="high", category="c", location="aws_s3_bucket.b")]
+    run = to_sarif([AnalysisReport(pack="swe", tool="t", input="dir with space/plan.json", findings=findings)])["runs"][0]
+    assert [r["locations"][0]["physicalLocation"] for r in run["results"]] == [
+        {"artifactLocation": {"uri": "My%20Docs/a%20b.py"}, "region": {"startLine": 4}},
+        {"artifactLocation": {"uri": "dir%20with%20space/plan.json"}, "region": {"startLine": 1}},
+    ]
+
+
 def test_parse_location():
     assert parse_location("a/b.py:7") == ("a/b.py", 7)
+    assert parse_location("My Docs/a b.py:7") == ("My Docs/a b.py", 7)
     assert parse_location("a/b.py:0") is None
     assert parse_location("203.0.113.50") is None
     assert parse_location("policy.json#Statement[0]") is None

@@ -11,7 +11,7 @@ scripts/check.sh               # all gates green before any agent runs
 ## Daily commands
 | Goal | Command |
 |---|---|
-| Dashboard | `scripts/start.sh` then open http://127.0.0.1:8000 |
+| Dashboard | `scripts/start.sh` then open http://127.0.0.1:8000 (with `TAC_DASHBOARD_TOKEN` set, open `/?token=<token>` once; the client keeps it for the tab). `start.sh` rebuilds the client when its sources change |
 | Full SDLC from a GitHub issue | `uv run adws/adw_sdlc_iso.py --issue 42` |
 | Full SDLC from a local issue | `uv run adws/adw_sdlc_iso.py --issue-file specs/examples/issue.md` |
 | Heavy models for a hard issue | add `--model-set heavy` |
@@ -28,7 +28,8 @@ scripts/check.sh               # all gates green before any agent runs
 | Queue work | edit `tasks.md`, then `uv run adws/adw_triggers/trigger_todone.py` |
 | Webhook | `GITHUB_WEBHOOK_SECRET=... uv run adws/adw_triggers/trigger_webhook.py` behind your tunnel |
 | List runs | `scripts/list_runs.sh` |
-| Clean up a run | `scripts/purge_tree.sh <id> --delete-branch` |
+| Clean up a run | `scripts/purge_tree.sh <id> --delete-branch [--force]`. Without `--force` it refuses uncommitted or untracked work and unmerged branches; it never deletes main, master, the base branch or a detached HEAD |
+| Review proposed lessons | `uv run python -m adws.adw_modules.memory pending`, then `approve <slug>` or `reject <slug>` |
 
 Exit codes: `0` passed, `1` failed, `2` security or usage error, `3` budget exceeded.
 
@@ -50,7 +51,9 @@ Exit codes: `0` passed, `1` failed, `2` security or usage error, `3` budget exce
 | Hook blocks a legitimate command | `pre_tool_use.py` regex hit | run that step yourself; don't loosen the hook for agents |
 
 ## Maintenance
+- **After runs:** `uv run python -m adws.adw_modules.memory pending`, then `approve <slug>` or `reject <slug>` for each proposed lesson.
 - **Weekly:** review `agent/lessons/`. Delete wrong lessons, merge duplicates, commit the rest.
+- **A legitimate skipped test** (platform-specific, quarantined) fails the unit gate until its node id is added to `[tool.tac].allowed_skips` in the main checkout's `pyproject.toml`.
 - **Weekly:** read `agent/agentic_kpis.md`. Is Attempts trending down and gate pass rate trending up?
 - **Monthly:** rotate `GITHUB_WEBHOOK_SECRET` and `GITHUB_PAT`, `uv lock --upgrade`, `npm update`, and re-run `scripts/check.sh`.
 - `agent/cache.db` is safe to delete at any time.

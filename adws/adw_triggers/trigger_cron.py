@@ -34,15 +34,16 @@ def poll_once() -> list[str]:
         number = str(issue["number"])
         if number in seen:
             continue
-        payload = {"action": "opened", "issue": {"number": issue["number"], "labels": issue.get("labels", []),
-                                                 "user": {"login": (issue.get("author") or {}).get("login", "")}}}
+        author = {"login": (issue.get("author") or {}).get("login", "")}
+        payload = {"action": "opened", "sender": author,
+                   "issue": {"number": issue["number"], "labels": issue.get("labels", []), "user": author}}
         decision = decide("issues", payload)
         if not decision:
             continue
         try:
             launch(decision[0], issue=number, model_set=decision[1])
         except RuntimeError:
-            break  # concurrency limit: try again next poll
+            continue  # concurrency limit or a run for this issue is active: try again next poll
         seen.add(number)
         launched.append(number)
     seen_path.write_text(json.dumps(sorted(seen)))

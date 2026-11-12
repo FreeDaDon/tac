@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+import os
 import re
 import time
 from collections.abc import Iterator
@@ -17,7 +18,7 @@ from .agent import execute_template, write_input_file
 from .budget import record_usage
 from .data_types import AgentRequest, IssueClass, IssuePayload
 from .git_ops import commit_all, has_remote, push_branch
-from .jev import JevClient, JevError, cost_of
+from .jev import JevClient, JevError, cost_of, live_provider
 from .memory import format_for_prompt, relevant
 from .security import SecurityError, fence_untrusted, resolve_inside, sanitize_untrusted, validate_branch_name
 from .state import ADWState
@@ -104,7 +105,12 @@ def _run(state: ADWState, agent_name: str, command: str, args: list[str], cwd: s
 def _jev_classify_issue(state: ADWState, issue_file: str) -> IssueClass | None:
     """Advisory fast path: a typed Jev decision instead of a full agent subprocess. Returns
     None (never raises) on anything that isn't a confident, valid classification, so the
-    caller always has a clean fallback to the full agent classifier."""
+    caller always has a clean fallback to the full agent classifier.
+
+    The offline mock is a keyword stand-in for Jev's wire contract, not a classifier: it only
+    answers for offline (mock-runner) runs. Real runs use it only with a live Jev provider."""
+    if live_provider() is None and os.getenv("TAC_AGENT_RUNNER", "claude") != "mock":
+        return None
     try:
         payload = IssuePayload.model_validate_json(extract_json_text(Path(issue_file).read_text()))
         answer = JevClient().classify_issue(payload.title, payload.body, payload.labels)
@@ -148,7 +154,7 @@ def build_plan(state: ADWState, issue_class: str, issue_file: str, plan_rel: str
     lesson_note = format_for_prompt(lessons)
     args = [state.data.issue_number or LOCAL_ISSUE_NUMBER, state.adw_id, issue_file, plan_rel]
     if lesson_note:
-        args.append(write_input_file(state.adw_id, "lessons.md", lesson_note))
+        args.append(write_input_file(state.adw_id, "lessons.md", fence_untrusted(lesson_note, "lessons")))
     _run(state, "sdlc_planner", issue_class, args, cwd=wt)
     plan_abs = resolve_inside(wt, plan_rel)
     if not plan_abs.exists() or plan_abs.stat().st_size == 0:

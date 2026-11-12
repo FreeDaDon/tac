@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import socket
+from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
 from typing import Any
 
@@ -42,21 +43,24 @@ def list_worktrees(root: Path) -> list[dict[str, Any]]:
     trees = root / "trees"
     if not trees.is_dir():
         return []
-    out: list[dict[str, Any]] = []
+    found: list[tuple[str, int | None, int | None, bool]] = []
     for tree in sorted(trees.iterdir()):
         if not tree.is_dir() or not is_valid_adw_id(tree.name):
             continue
         env = _parse_ports_env(tree / ".ports.env")
-        be, fe = _port(env.get("BACKEND_PORT")), _port(env.get("FRONTEND_PORT"))
-        out.append(
-            {
-                "adw_id": tree.name,
-                "backend_port": be,
-                "frontend_port": fe,
-                "backend_live": port_listening(be) if be else False,
-                "frontend_live": port_listening(fe) if fe else False,
-                "has_ports_env": bool(env),
-                "has_run": (runs_dir(root) / tree.name).is_dir(),
-            }
-        )
-    return out
+        found.append((tree.name, _port(env.get("BACKEND_PORT")), _port(env.get("FRONTEND_PORT")), bool(env)))
+    ports = sorted({p for _, be, fe, _ in found for p in (be, fe) if p})
+    with ThreadPoolExecutor(max_workers=max(1, min(32, len(ports)))) as pool:
+        live = dict(zip(ports, pool.map(port_listening, ports), strict=True))
+    return [
+        {
+            "adw_id": adw_id,
+            "backend_port": be,
+            "frontend_port": fe,
+            "backend_live": live.get(be, False) if be else False,
+            "frontend_live": live.get(fe, False) if fe else False,
+            "has_ports_env": has_env,
+            "has_run": (runs_dir(root) / adw_id).is_dir(),
+        }
+        for adw_id, be, fe, has_env in found
+    ]

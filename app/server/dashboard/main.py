@@ -13,10 +13,12 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
 
-from fastapi import Depends, FastAPI, HTTPException, Query, Request, WebSocket, WebSocketDisconnect
+from fastapi import FastAPI, HTTPException, Query, Request, WebSocket, WebSocketDisconnect
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import JSONResponse
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel, ConfigDict, Field, ValidationError, field_validator
+from starlette.concurrency import run_in_threadpool
 from starlette.middleware.trustedhost import TrustedHostMiddleware
 
 REPO_ROOT = Path(__file__).resolve().parents[3]
@@ -31,13 +33,14 @@ from . import runs as runs_mod  # noqa: E402
 from . import version as version_mod  # noqa: E402
 from . import worktrees as worktrees_mod  # noqa: E402
 from .store import EventStore  # noqa: E402
-from .ws import ConnectionManager  # noqa: E402
+from .ws import TRY_AGAIN_LATER, ConnectionManager  # noqa: E402
 
 log = logging.getLogger("dashboard")
 
 MAX_PAYLOAD_BYTES = 64 * 1024
 INITIAL_EVENTS = 200
 _EVENT_TYPE_RE = re.compile(r"^[A-Za-z0-9_.:-]{1,64}$")
+_TOKEN_PARAM_RE = re.compile(r"(token=)[^&\s\"]*", re.IGNORECASE)
 
 
 # --- ingest models -------------------------------------------------------------------------
@@ -110,6 +113,8 @@ class Settings:
     token: str | None
     cors_origins: list[str]
     allowed_hosts: list[str]
+    max_ws_clients: int = 50
+    max_events: int = 50_000
     dist_dir: Path = field(default_factory=lambda: Path(__file__).resolve().parents[2] / "client" / "dist")
 
     @classmethod
@@ -134,6 +139,8 @@ class Settings:
             token=os.getenv("TAC_DASHBOARD_TOKEN") or None,
             cors_origins=cors,
             allowed_hosts=hosts,
+            max_ws_clients=int(os.getenv("TAC_DASHBOARD_MAX_WS_CLIENTS", "50")),
+            max_events=int(os.getenv("TAC_DASHBOARD_MAX_EVENTS", "50000")),
         )
 
 
@@ -149,6 +156,34 @@ def _bearer(value: str | None) -> str | None:
     if value and value.lower().startswith("bearer "):
         return value[7:].strip()
     return None
+
+
+def _ws_token(websocket: WebSocket) -> tuple[str | None, bool]:
+    """(token, offered_bearer). Browsers send it as subprotocols ["bearer", token]; others may use Authorization."""
+    offered = [p.strip() for p in websocket.headers.get("sec-websocket-protocol", "").split(",") if p.strip()]
+    if len(offered) == 2 and offered[0] == "bearer":
+        return offered[1], True
+    return _bearer(websocket.headers.get("authorization")), "bearer" in offered
+
+
+class RedactTokens(logging.Filter):
+    """Mask token=... in uvicorn log lines, which include request paths with their query strings."""
+
+    def filter(self, record: logging.LogRecord) -> bool:
+        if isinstance(record.msg, str):
+            record.msg = _TOKEN_PARAM_RE.sub(r"\1[redacted]", record.msg)
+        if isinstance(record.args, tuple):
+            record.args = tuple(
+                _TOKEN_PARAM_RE.sub(r"\1[redacted]", a) if isinstance(a, str) else a for a in record.args
+            )
+        return True
+
+
+def _install_log_redaction() -> None:
+    for name in ("uvicorn.access", "uvicorn.error"):
+        logger = logging.getLogger(name)
+        if not any(isinstance(f, RedactTokens) for f in logger.filters):
+            logger.addFilter(RedactTokens())
 
 
 async def _read_json_capped(request: Request) -> Any:
@@ -198,8 +233,9 @@ def _cache_stats(root: Path) -> dict[str, Any]:
 # --- app factory ---------------------------------------------------------------------------
 def create_app(root: Path | None = None, db_path: Path | None = None) -> FastAPI:
     settings = Settings.from_env(root, db_path)
-    store = EventStore(settings.db_path)
-    manager = ConnectionManager()
+    store = EventStore(settings.db_path, max_rows=settings.max_events)
+    manager = ConnectionManager(max_clients=settings.max_ws_clients)
+    _install_log_redaction()
     version_info = {"name": "tac", **version_mod.load_version(settings.root)}
 
     app = FastAPI(title="TAC ADW Control Plane", version="0.1.0", docs_url="/api/docs", redoc_url=None,
@@ -207,6 +243,16 @@ def create_app(root: Path | None = None, db_path: Path | None = None) -> FastAPI
     app.state.settings = settings
     app.state.store = store
     app.state.manager = manager
+
+    @app.middleware("http")
+    async def require_token(request: Request, call_next: Any) -> Any:
+        path = request.url.path
+        if path.startswith("/api/") and path != "/api/health":
+            if not _token_ok(settings.token, _bearer(request.headers.get("authorization"))):
+                return JSONResponse(
+                    {"detail": "missing or invalid bearer token"}, 401, headers={"WWW-Authenticate": "Bearer"}
+                )
+        return await call_next(request)
 
     app.add_middleware(
         CORSMiddleware,
@@ -231,13 +277,9 @@ def create_app(root: Path | None = None, db_path: Path | None = None) -> FastAPI
             )
         return response
 
-    def require_token(request: Request) -> None:
-        if not _token_ok(settings.token, _bearer(request.headers.get("authorization"))):
-            raise HTTPException(401, "missing or invalid bearer token", headers={"WWW-Authenticate": "Bearer"})
-
     async def ingest(event: TelemetryEvent) -> dict[str, Any]:
-        saved = store.insert(event.model_dump(mode="json"))
-        await manager.broadcast({"type": "event", "data": saved})
+        saved = await run_in_threadpool(store.insert, event.model_dump(mode="json"))
+        manager.broadcast({"type": "event", "data": saved})
         return saved
 
     @app.get("/api/health")
@@ -250,7 +292,7 @@ def create_app(root: Path | None = None, db_path: Path | None = None) -> FastAPI
             "auth_required": bool(settings.token),
         }
 
-    @app.post("/api/events", status_code=201, dependencies=[Depends(require_token)])
+    @app.post("/api/events", status_code=201)
     async def post_event(request: Request) -> dict[str, Any]:
         body = await _read_json_capped(request)
         try:
@@ -259,7 +301,7 @@ def create_app(root: Path | None = None, db_path: Path | None = None) -> FastAPI
             raise _validation_error(exc) from exc
         return await ingest(event)
 
-    @app.post("/api/hook-events", status_code=201, dependencies=[Depends(require_token)])
+    @app.post("/api/hook-events", status_code=201)
     async def post_hook_event(request: Request) -> dict[str, Any]:
         body = await _read_json_capped(request)
         try:
@@ -299,7 +341,7 @@ def create_app(root: Path | None = None, db_path: Path | None = None) -> FastAPI
 
     @app.get("/api/budget")
     def get_budget() -> dict[str, Any]:
-        return runs_mod.budget(settings.root)
+        return runs_mod.budget(runs_mod.list_runs(settings.root))
 
     @app.get("/api/worktrees")
     def get_worktrees() -> list[dict[str, Any]]:
@@ -324,20 +366,26 @@ def create_app(root: Path | None = None, db_path: Path | None = None) -> FastAPI
         if origin and origin not in settings.cors_origins and origin not in {f"http://{host}", f"https://{host}"}:
             await websocket.close(code=1008)
             return
-        supplied = websocket.query_params.get("token") or _bearer(websocket.headers.get("authorization"))
+        supplied, offered_bearer = _ws_token(websocket)
         if not _token_ok(settings.token, supplied):
             await websocket.close(code=1008)
             return
-        await websocket.accept()
-        await websocket.send_json({"type": "initial", "data": store.recent(limit=INITIAL_EVENTS)})
-        await manager.connect(websocket)
+        await websocket.accept(subprotocol="bearer" if offered_bearer else None)
+        if not manager.connect(websocket):
+            await websocket.close(code=TRY_AGAIN_LATER)
+            return
         try:
-            while True:
-                await websocket.receive_text()  # clients may ping; content is ignored
+            # Registered before the snapshot so no event falls between the two; the client drops
+            # broadcasts already covered by the snapshot (id <= its newest id).
+            initial = await run_in_threadpool(store.recent, limit=INITIAL_EVENTS)
+            await websocket.send_json({"type": "initial", "data": initial})
+            manager.start(websocket)
+            while (await websocket.receive())["type"] != "websocket.disconnect":
+                pass  # clients may ping; content is ignored
         except WebSocketDisconnect:
             pass
         finally:
-            await manager.disconnect(websocket)
+            manager.disconnect(websocket)
 
     if settings.dist_dir.is_dir():
         app.mount("/", StaticFiles(directory=settings.dist_dir, html=True), name="client")

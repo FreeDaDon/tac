@@ -1,4 +1,5 @@
-from core.devops.tfplan import analyze_file, analyze_plan, classify_actions, is_critical_type, risk_score
+from core.common import risk_score
+from core.devops.tfplan import analyze_file, analyze_plan, classify_actions, is_critical_type
 
 
 def rc(address, rtype, actions, before=None, after=None):
@@ -73,7 +74,7 @@ def test_security_rules():
     by_addr = {(f.resource, f.rule_id): f.severity for f in analyze_plan(plan).findings}
     assert by_addr == {
         ("aws_security_group_rule.all", "TF-SG-OPEN"): "critical",
-        ("aws_vpc_security_group_ingress_rule.redis", "TF-SG-OPEN"): "high",
+        ("aws_vpc_security_group_ingress_rule.redis", "TF-SG-OPEN"): "critical",
         ("aws_s3_bucket_policy.p", "TF-S3-PUBLIC"): "critical",
         ("aws_s3_bucket_public_access_block.b", "TF-S3-PUBLIC"): "medium",
         ("aws_ebs_volume.v", "TF-UNENCRYPTED"): "high",
@@ -88,3 +89,25 @@ def test_risk_score_caps():
     assert risk_score(report.findings) == 100
     assert analyze_plan({"resource_changes": [rc("aws_sqs_queue.q", "aws_sqs_queue", ["delete"], {}, None)]}
                         ).metrics["risk_score"] == 20
+
+
+def test_bucket_policy_single_statement_and_principal_list_are_public():
+    for policy in ('{"Statement":{"Effect":"Allow","Principal":"*","Action":"s3:GetObject","Resource":"*"}}',
+                   '{"Statement":[{"Effect":"Allow","Principal":{"AWS":["*"]},"Action":"s3:GetObject","Resource":"*"}]}'):
+        plan = {"resource_changes": [rc("aws_s3_bucket_policy.p", "aws_s3_bucket_policy", ["create"], None,
+                                        {"policy": policy})]}
+        assert [(f.rule_id, f.severity) for f in analyze_plan(plan).findings] == [("TF-S3-PUBLIC", "critical")]
+
+
+def test_open_port_severity_matches_the_gcp_pack():
+    from core.gcp_sre import tfgcp
+
+    for port in (22, 3389, 5432, 6379, 5601, 21):
+        plan = {"resource_changes": [rc("aws_security_group_rule.r", "aws_security_group_rule", ["create"], None,
+                                        {"type": "ingress", "protocol": "tcp", "from_port": port, "to_port": port,
+                                         "cidr_blocks": ["0.0.0.0/0"]})]}
+        [aws] = analyze_plan(plan).findings
+        [gcp] = tfgcp.check_network({"address": "fw", "type": "google_compute_firewall",
+                                     "values": {"source_ranges": ["0.0.0.0/0"],
+                                                "allow": [{"protocol": "tcp", "ports": [str(port)]}]}})
+        assert aws.severity == gcp.severity, port

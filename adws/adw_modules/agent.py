@@ -86,11 +86,29 @@ class Runner(Protocol):
     def run(self, request: AgentRequest, prompt: str, model: str, output_dir: Path) -> AgentResponse: ...
 
 
+def pinned_settings(adw_id: str) -> Path:
+    """The main checkout's settings with hook paths made absolute, written outside the worktree.
+
+    Claude Code resolves $CLAUDE_PROJECT_DIR to the agent's cwd, i.e. the worktree it can edit.
+    Pinning the hooks to the main checkout means an agent that rewrites its worktree copy of a
+    hook or of settings.json cannot disable the guard for later phases.
+    """
+    root = project_root()
+    text = (root / ".claude" / "settings.json").read_text()
+    text = text.replace("$CLAUDE_PROJECT_DIR/.claude/", f"{root}/.claude/")
+    path = run_dir(adw_id) / "settings.json"
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text(json.dumps(json.loads(text), indent=2))
+    return path
+
+
 class ClaudeRunner:
     def run(self, request: AgentRequest, prompt: str, model: str, output_dir: Path) -> AgentResponse:
-        cmd = [CLAUDE_PATH, "-p", "--model", model, "--output-format", "stream-json", "--verbose"]
+        cmd = [CLAUDE_PATH, "-p", "--model", model, "--output-format", "stream-json", "--verbose",
+               "--setting-sources", "user", "--settings", str(pinned_settings(request.adw_id)),
+               "--strict-mcp-config"]
         cwd = request.working_dir or str(project_root())
-        mcp = Path(cwd) / ".mcp.json"
+        mcp = project_root() / ".mcp.json"
         if mcp.exists():
             cmd += ["--mcp-config", str(mcp)]
         # the run's own artifact dir (inputs, screenshots) lives in the main checkout, outside the worktree
@@ -112,7 +130,7 @@ class ClaudeRunner:
                 stderr=subprocess.PIPE,
                 text=True,
                 cwd=cwd,
-                env=safe_subprocess_env(include_github=True),
+                env=safe_subprocess_env(),
                 start_new_session=True,
             )
             try:

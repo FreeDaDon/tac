@@ -1,3 +1,5 @@
+import time
+
 from core.soc.zeek import (
     Conn,
     analyze_file,
@@ -56,3 +58,11 @@ def test_scan_threshold_and_outbound_internal_only():
     internal = [conn(0, dst="10.0.0.9", ob=10**9)]
     assert detect_large_outbound(internal) == []
     assert detect_large_outbound([conn(0, ob=2 * 10**9)])[0].severity == "high"
+
+
+def test_port_scan_window_is_linear_in_connections():
+    conns = [conn(i * 0.001, dst=f"10.1.{i // 250}.{i % 250}", dport=22) for i in range(20_000)]
+    started = time.perf_counter()
+    [finding] = detect_port_scan(conns)
+    assert time.perf_counter() - started < 2
+    assert finding.evidence["targets"] == 20_000

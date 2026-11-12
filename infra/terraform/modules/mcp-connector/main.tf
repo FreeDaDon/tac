@@ -21,9 +21,9 @@ locals {
     tools = [for t in var.tools : {
       name           = t.name
       description    = t.description
-      annotations    = { readOnlyHint = t.read_only, openWorldHint = false }
+      annotations    = { readOnlyHint = t.read_only, openWorldHint = t.open_world }
       requiredScopes = t.required_scopes
-      inputSchema    = t.input_schema
+      inputSchema    = jsondecode(t.input_schema)
     }]
   }
 
@@ -59,8 +59,8 @@ resource "terraform_data" "guard" {
     }
 
     precondition {
-      condition     = var.environment == "dev" || length(trimspace(var.review_ticket)) > 0
-      error_message = "staging and prod require a review_ticket."
+      condition     = var.environment == "dev" || var.review_ticket != ""
+      error_message = "staging and prod require a review_ticket (AICR-<number>)."
     }
   }
 }

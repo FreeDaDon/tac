@@ -8,8 +8,18 @@ from collections import Counter
 from pathlib import Path
 from typing import Any
 
-from core.common import SEVERITY_ORDER, AnalysisReport, Finding, FindingSeverity
-from core.iam.policy import lint_policy
+from core.common import (
+    PUBLIC_CIDRS,
+    SENSITIVE_PORTS,
+    SEVERITY_ORDER,
+    AnalysisReport,
+    Finding,
+    FindingSeverity,
+    as_list,
+    exposure_severity,
+    risk_score,
+)
+from core.iam.policy import lint_policy, principal_is_public
 
 TOOL = "tfplan"
 
@@ -22,11 +32,6 @@ CRITICAL_TYPE_PATTERNS = tuple(re.compile(p) for p in (
     r"^google_(sql_database_instance|sql_database|storage_bucket|bigquery_dataset|kms_\w+|spanner_\w+)$",
     r"^google_\w*iam\w*$", r"^azurerm_(\w*sql\w*|storage_account|key_vault\w*|cosmosdb_\w+|role_\w+)$",
 ))
-SENSITIVE_PORTS = {22: "ssh", 23: "telnet", 21: "ftp", 3389: "rdp", 3306: "mysql", 5432: "postgres",
-                   1433: "mssql", 1521: "oracle", 27017: "mongodb", 6379: "redis", 9200: "elasticsearch",
-                   5601: "kibana", 11211: "memcached", 2375: "docker", 445: "smb", 5900: "vnc"}
-ADMIN_PORTS = frozenset({22, 3389})
-PUBLIC_CIDRS = frozenset({"0.0.0.0/0", "::/0"})
 PUBLIC_ACLS: dict[str, FindingSeverity] = {"public-read": "high", "public-read-write": "critical", "authenticated-read": "high"}
 IAM_POLICY_TYPES = frozenset({"aws_iam_policy", "aws_iam_role_policy", "aws_iam_user_policy", "aws_iam_group_policy"})
 # (type, attribute, value meaning "unencrypted")
@@ -35,7 +40,6 @@ UNENCRYPTED_CHECKS: tuple[tuple[str, str], ...] = (
     ("aws_ebs_volume", "encrypted"), ("aws_efs_file_system", "encrypted"), ("aws_redshift_cluster", "encrypted"),
     ("aws_elasticache_replication_group", "at_rest_encryption_enabled"), ("aws_docdb_cluster", "storage_encrypted"),
 )
-SEVERITY_WEIGHTS = {"critical": 40, "high": 20, "medium": 8, "low": 3, "info": 0}
 
 
 def is_critical_type(resource_type: str) -> bool:
@@ -107,10 +111,9 @@ def check_open_ingress(rc: dict[str, Any], after: dict[str, Any]) -> list[Findin
         exposed = sorted(p for p in SENSITIVE_PORTS if lo <= p <= hi)
         if not exposed:
             continue
-        all_ports = lo == 0 and hi >= 65535
-        severity: FindingSeverity = "critical" if all_ports or ADMIN_PORTS & set(exposed) else "high"
         findings.append(_finding(
-            rc, "TF-SG-OPEN", severity, f"Ingress from the internet to {', '.join(SENSITIVE_PORTS[p] for p in exposed)}",
+            rc, "TF-SG-OPEN", exposure_severity(exposed, all_ports=lo == 0 and hi >= 65535),
+            f"Ingress from the internet to {', '.join(SENSITIVE_PORTS[p] for p in exposed)}",
             "network", "Restrict the CIDR to known ranges or use SSM/bastion/VPN.",
             from_port=lo, to_port=hi, ports=exposed))
     return findings
@@ -136,8 +139,8 @@ def check_public_s3(rc: dict[str, Any], after: dict[str, Any]) -> list[Finding]:
                          "exposure", "Use private ACLs, bucket ownership controls and a public access block.", acl=acl)]
     if rtype == "aws_s3_bucket_policy":
         doc = _policy_doc(after.get("policy")) or {}
-        public = [s for s in doc.get("Statement", []) if isinstance(s, dict) and s.get("Effect") == "Allow"
-                  and s.get("Principal") in ("*", {"AWS": "*"}) and not s.get("Condition")]
+        public = [s for s in as_list(doc.get("Statement")) if isinstance(s, dict) and s.get("Effect") == "Allow"
+                  and principal_is_public(s.get("Principal")) and not s.get("Condition")]
         if public:
             return [_finding(rc, "TF-S3-PUBLIC", "critical", "Bucket policy allows anonymous access", "exposure",
                              "Remove Principal \"*\" or add restrictive conditions (aws:SourceVpce, aws:PrincipalOrgID).",
@@ -181,10 +184,6 @@ def analyze_resource_change(rc: dict[str, Any]) -> list[Finding]:
         for check in (check_open_ingress, check_public_s3, check_encryption, check_iam_policy):
             findings.extend(check(rc, after))
     return findings
-
-
-def risk_score(findings: list[Finding]) -> int:
-    return min(100, sum(SEVERITY_WEIGHTS[f.severity] for f in findings))
 
 
 def managed_changes(plan: dict[str, Any]) -> list[dict[str, Any]]:

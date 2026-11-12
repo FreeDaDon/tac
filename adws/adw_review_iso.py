@@ -16,9 +16,10 @@ from adws.adw_modules import workflow_ops as ops
 from adws.adw_modules.agent import execute_template, write_input_file
 from adws.adw_modules.cli import main_wrapper, require_state
 from adws.adw_modules.data_types import AgentRequest, GateResult, ReviewResult
-from adws.adw_modules.gates import tac_config
+from adws.adw_modules.gates import stamp, tac_config
 from adws.adw_modules.git_ops import branch_diff
 from adws.adw_modules.jev import triage_findings
+from adws.adw_modules.security import fence_untrusted
 from adws.adw_modules.state import ADWState
 from adws.adw_modules.utils import parse_json
 from adws.adw_modules.worktree_ops import validate_worktree
@@ -28,7 +29,9 @@ WORKFLOW = "adw_review_iso"
 
 def review_once(state: ADWState, attempt: int) -> ReviewResult:
     wt = state.working_dir()
-    diff_path = write_input_file(state.adw_id, f"review_diff_{attempt}.patch", branch_diff(wt))
+    diff = branch_diff(wt)
+    diff_path = write_input_file(state.adw_id, f"review_diff_{attempt}.patch",
+                                 fence_untrusted(diff, "branch_diff", max_chars=len(diff) + 1))
     agent = f"reviewer_{attempt}"
     resp = execute_template(AgentRequest(adw_id=state.adw_id, agent_name=agent, slash_command="/review",
                                          args=[state.adw_id, state.data.plan_file or "", agent, diff_path],
@@ -89,7 +92,7 @@ def run(adw_id: str, skip_resolution: bool = False) -> bool:
         if gate is None:
             gate = GateResult(name="spec_review", status="error", detail="review produced no result")
         state.reload()
-        state.gate_report().upsert(gate)
+        state.gate_report().upsert(stamp(gate, state.working_dir()))
         if gate.status != "passed":
             state.set_phase("review", "failed")
         state.save()

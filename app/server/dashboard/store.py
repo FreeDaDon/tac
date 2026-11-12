@@ -27,13 +27,16 @@ CREATE INDEX IF NOT EXISTS idx_events_timestamp ON events(timestamp);
 """
 
 MAX_LIMIT = 1000
+PRUNE_EVERY = 500
 
 
 class EventStore:
-    def __init__(self, path: Path) -> None:
+    def __init__(self, path: Path, max_rows: int = 50_000) -> None:
         self.path = path
+        self.max_rows = max_rows
         self._lock = threading.Lock()
         self._ready = False
+        self._inserts = 0
 
     def _init(self) -> None:
         self.path.parent.mkdir(parents=True, exist_ok=True)
@@ -41,10 +44,14 @@ class EventStore:
         try:
             conn.execute("PRAGMA journal_mode=WAL")
             conn.executescript(SCHEMA)
+            self._prune(conn)
             conn.commit()
         finally:
             conn.close()
         self._ready = True
+
+    def _prune(self, conn: sqlite3.Connection) -> None:
+        conn.execute("DELETE FROM events WHERE id <= (SELECT MAX(id) FROM events) - ?", (self.max_rows,))
 
     @contextmanager
     def _conn(self) -> Iterator[sqlite3.Connection]:
@@ -86,6 +93,9 @@ class EventStore:
             )
             new_id = cur.lastrowid
             row = c.execute("SELECT * FROM events WHERE id = ?", (new_id,)).fetchone()
+            self._inserts += 1
+            if self._inserts % PRUNE_EVERY == 0:
+                self._prune(c)
         return self._row(row)
 
     def recent(
@@ -118,5 +128,8 @@ class EventStore:
         return out
 
     def count(self) -> int:
+        # ids are contiguous (rows only ever leave oldest-first via _prune), so two index lookups
+        # give the row count without scanning the table.
+        sql = "SELECT COALESCE((SELECT MAX(id) FROM events) - (SELECT MIN(id) FROM events) + 1, 0)"
         with self._conn() as c:
-            return int(c.execute("SELECT COUNT(*) FROM events").fetchone()[0])
+            return int(c.execute(sql).fetchone()[0])

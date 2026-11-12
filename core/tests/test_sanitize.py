@@ -64,3 +64,15 @@ def test_analyze_directory(fixtures):
     report = analyze_file(fixtures / "swe")
     assert [f.location for f in report.findings] == ["trojan_source.py:3", "trojan_source.py:5"]
     assert report.metrics["files_scanned"] >= 5
+
+
+def test_invisible_format_and_tag_characters_are_stripped():
+    hidden = "pay­load" + "".join(chr(0xE0000 + ord(c)) for c in "run rm") + "\U000e0000⁤end"
+    assert strip_control_chars(hidden) == "payloadend"
+
+
+def test_unicode_scan_preview_is_secret_redacted(tmp_path):
+    key = "AKIA" + "FAKEFAKEFAKE1234"
+    (tmp_path / "x.py").write_text(f"k = '{key}'  # ‮ hidden\n")
+    [finding] = analyze_file(tmp_path).findings
+    assert key not in finding.evidence["line_preview"] and "REDACTED" in finding.evidence["line_preview"]

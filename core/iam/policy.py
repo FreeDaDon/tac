@@ -7,7 +7,8 @@ import json
 from pathlib import Path
 from typing import Any
 
-from core.common import AnalysisReport, Finding, FindingSeverity
+from core.common import AnalysisReport, Finding, FindingSeverity, as_list
+from core.loaders import load_structured
 
 TOOL = "iam_policy"
 CURRENT_VERSION = "2012-10-17"
@@ -21,12 +22,6 @@ SENSITIVE_ACTIONS = (
     "cloudtrail:StopLogging", "cloudtrail:DeleteTrail", "organizations:LeaveOrganization", "s3:DeleteBucket",
 )
 ASSUME_ROLE_ACTIONS = ("sts:AssumeRole", "sts:AssumeRoleWithWebIdentity", "sts:AssumeRoleWithSAML")
-
-
-def as_list(value: Any) -> list[Any]:
-    if value is None:
-        return []
-    return value if isinstance(value, list) else [value]
 
 
 def action_matches(pattern: str, action: str) -> bool:
@@ -61,7 +56,8 @@ def extract_document(data: Any) -> dict[str, Any]:
     raise ValueError("not an IAM policy document (no Statement)")
 
 
-def _principal_is_public(principal: Any) -> bool:
+def principal_is_public(principal: Any) -> bool:
+    """`*`, or any principal map entry (`{"AWS": "*"}`, `{"AWS": ["*"]}`) that includes `*`."""
     if principal == "*":
         return True
     if isinstance(principal, dict):
@@ -124,7 +120,7 @@ def lint_statement(stmt: dict[str, Any], index: int, source: str = "") -> list[F
     if unscoped and not full_admin_action and grants(actions, "iam:PassRole"):
         findings.append(_finding("IAM006", "high", "iam:PassRole on any role", resource, loc, stmt,
                                  "Restrict Resource to specific role ARNs and add iam:PassedToService."))
-    if _principal_is_public(stmt.get("Principal")) and any(grants(actions, a) for a in ASSUME_ROLE_ACTIONS):
+    if principal_is_public(stmt.get("Principal")) and any(grants(actions, a) for a in ASSUME_ROLE_ACTIONS):
         findings.append(_finding(
             "IAM007", "medium" if condition else "critical", "Trust policy allows any principal to assume role",
             resource, loc, stmt, "Name specific principals; require sts:ExternalId / aws:PrincipalOrgID conditions.",
@@ -152,7 +148,7 @@ def lint_policy(doc: dict[str, Any], source: str = "") -> list[Finding]:
 
 
 def analyze_file(path: Path, **opts: Any) -> AnalysisReport:
-    doc = extract_document(json.loads(Path(path).read_text(encoding="utf-8")))
+    doc = extract_document(load_structured(Path(path)))
     findings = lint_policy(doc, str(path))
     statements = len(as_list(doc.get("Statement")))
     return AnalysisReport(

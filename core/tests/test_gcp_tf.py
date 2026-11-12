@@ -96,3 +96,16 @@ def test_rejects_non_terraform_json(tmp_path):
     path.write_text('{"hello": 1}')
     with pytest.raises(ValueError):
         tfgcp.analyze_file(path)
+
+
+def test_gke_without_authorized_networks_is_open():
+    def cluster(**values):
+        res = {"address": "c", "type": "google_container_cluster",
+               "values": {"private_cluster_config": [{"enable_private_nodes": True}],
+                          "workload_identity_config": [{"workload_pool": "p.svc.id.goog"}], **values}}
+        return [f.rule_id for f in tfgcp.check_gke(res)]
+
+    assert cluster() == ["GCP-GKE-MASTER-OPEN"]
+    assert cluster(master_authorized_networks_config=[]) == ["GCP-GKE-MASTER-OPEN"]
+    assert cluster(master_authorized_networks_config=[{"cidr_blocks": [{"cidr_block": "10.0.0.0/8"}]}]) == []
+    assert cluster(private_cluster_config=[{"enable_private_nodes": True, "enable_private_endpoint": True}]) == []

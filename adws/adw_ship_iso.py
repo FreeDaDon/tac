@@ -4,7 +4,8 @@
 Locks (all required):
   1. TAC_ZTE_ENABLED=1
   2. domain ship policy allows auto-merge (swe only; devops/iam are pr_only, soc report_only)
-  3. every required gate in the persisted GateReport passed (E2E not skipped)
+  3. every required gate in the persisted GateReport passed (E2E not skipped) on the commit being
+     merged (only post_gate_paths, i.e. the documenter's files, may change after a verdict)
   4. run budget not exhausted
   5. a GitHub PR exists and its CI checks are green
 The main working copy is never checked out or modified (tac-7 merged locally on main).
@@ -21,6 +22,7 @@ from adws.adw_modules import workflow_ops as ops
 from adws.adw_modules.budget import Budget
 from adws.adw_modules.cli import main_wrapper, require_state
 from adws.adw_modules.domains import get_domain
+from adws.adw_modules.gates import head_sha, stale_gates
 from adws.adw_modules.git_ops import has_remote
 from adws.adw_modules.state import ADWState
 from adws.adw_modules.utils import env_flag
@@ -45,6 +47,9 @@ def ship_blockers(state: ADWState, check_remote: bool = True) -> list[str]:
         missing = [m for m in missing if not ((g := report.get(m)) and g.status == "skipped" and not g.required_for_zte)]
         if missing:
             reasons.append(f"gates not passed: {missing}")
+        stale = stale_gates(report, state.working_dir(), list(domain.required_gates))
+        if stale:
+            reasons.append(f"gates judged an older commit: {stale}")
     if d.e2e_skipped:
         reasons.append("E2E was skipped")
     if Budget(d.budget_usd, d.usage).exhausted:
@@ -76,7 +81,7 @@ def run(adw_id: str, dry_run: bool = False) -> bool:
         if dry_run:
             print("all ship locks open (dry run; nothing merged)")
             return True
-        github.merge_pr(state.data.branch_name or "")
+        github.merge_pr(state.data.branch_name or "", head_sha(state.working_dir()))
         from adws.adw_document_iso import record_kpis
 
         state.reload()

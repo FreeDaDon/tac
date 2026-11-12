@@ -1,5 +1,7 @@
 import json
 
+import pytest
+
 from core.gcp_sre import events as ev
 from core.gcp_sre import logs
 
@@ -75,3 +77,26 @@ def test_parse_ts_variants():
     assert iso(1751277600) == "2025-06-30T10:00:00+00:00"
     assert iso("2025-06-30T12:00:00+0200") == "2025-06-30T12:00:00+02:00"
     assert ev.parse_ts("garbage") is None and ev.parse_ts("") is None
+
+
+def test_csv_with_huge_field_loads_and_csv_errors_are_value_errors(tmp_path, monkeypatch):
+    big = tmp_path / "big.csv"
+    big.write_text("_time,host,_raw\n1751277600,h1,\"ERROR " + "x" * 200_000 + "\"\n")
+    [e] = ev.load_events(big)
+    assert e.level == "ERROR"
+    limit = ev.csv.field_size_limit()
+    try:
+        ev.csv.field_size_limit(100)
+        with pytest.raises(ValueError):
+            ev.load_events(big)
+    finally:
+        ev.csv.field_size_limit(limit)
+
+
+def test_error_burst_minute_is_converted_to_utc(tmp_path):
+    lines = [f"2025-06-30T12:0{m}:00+02:00 INFO ok" for m in range(4)]
+    lines += [f"2025-06-30T12:04:{s:02d}+02:00 ERROR boom {s}" for s in range(20)]
+    p = tmp_path / "app.log"
+    p.write_text("\n".join(lines) + "\n")
+    burst = next(f for f in logs.analyze_file(p).findings if f.rule_id == "SRE-ERROR-BURST")
+    assert burst.evidence["minute"] == "2025-06-30T10:04Z"

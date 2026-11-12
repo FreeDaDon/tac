@@ -58,4 +58,4 @@ uv run adws/adw_domain_iso.py --pack devops --input plan.tfplan.json --propose  
 
 1. Add a pure check `check_x(rc, after) -> list[Finding]` to `tfplan.py`, and add it to the tuple in `analyze_resource_change`.
 2. Use a stable `TF-*` rule id, and add positive and negative cases to `core/tests/test_tfplan.py`.
-3. For a new input type, write `core/devops/<tool>.py` with `analyze_file(path, **opts) -> AnalysisReport`. Register it in `PACK_TOOLS["devops"]` and teach `_detect_devops` to recognize it.
+3. For a new input type, write `core/devops/<tool>.py` with `analyze_file(path, **opts) -> AnalysisReport`. Register it in the `Pack` entry for `devops` in `PACKS` (`core/registry.py`: its `tools` map and its detector) and teach that detector to recognize it.

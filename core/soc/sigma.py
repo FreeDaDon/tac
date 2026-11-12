@@ -167,10 +167,31 @@ class _Parser:
         return lambda r: r[tok]
 
 
+def _validate_selection(name: str, selection: Any) -> None:
+    """Reject unknown modifiers and uncompilable `|re` patterns up front, so matching never raises."""
+    for sel in selection if isinstance(selection, list) else [selection]:
+        if not isinstance(sel, dict):
+            continue
+        for key, value in sel.items():
+            mods = str(key).split("|")[1:]
+            unknown = set(mods) - SUPPORTED_MODIFIERS
+            if unknown:
+                raise SigmaError(f"{name}.{key}: unsupported modifier(s) {sorted(unknown)}")
+            if "re" not in mods:
+                continue
+            for pattern in value if isinstance(value, list) else [value]:
+                try:
+                    re.compile(str(pattern))
+                except re.error as exc:
+                    raise SigmaError(f"{name}.{key}: invalid regular expression {pattern!r}: {exc}") from exc
+
+
 def compile_rule(rule: dict[str, Any]) -> tuple[Matcher, set[str]]:
     """Return (event matcher, referenced search identifiers)."""
     detection = dict(rule["detection"])
     condition = detection.pop("condition", None)
+    for name, selection in detection.items():
+        _validate_selection(name, selection)
     if isinstance(condition, list):
         condition = " or ".join(f"({c})" for c in condition)
     if not isinstance(condition, str):

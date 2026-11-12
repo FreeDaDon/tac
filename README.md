@@ -44,7 +44,7 @@ scripts/start.sh                                         # dashboard at http://1
 | `agent/` | runtime: run state and events, KPIs (`agentic_kpis.md`), lessons memory, reports |
 | `specs/` | plan templates in `specs/templates/` (feature, bug, chore, patch, infra_change, incident_triage, access_review, ai_connector_review, gcp_sre_incident) and generated plans |
 | `docs/playbook/` | the playbook: start at [00-principles](docs/playbook/00-principles.md) |
-| `infra/terraform/` | optional IaC: the `mcp-connector` module renders an MCP server manifest in the exact shape `core/mcp_gov/manifest.py` scans, with its own variable validations mirroring the scanner's rules (wildcard scopes, plaintext transport, broad audience) so a bad connector config fails at `terraform plan` before it ever reaches the scanner. Never talks to a real platform — only the `local` provider, rendering JSON files to disk. See [`infra/terraform/README.md`](infra/terraform/README.md). |
+| `infra/terraform/` | optional IaC: the `mcp-connector` module renders an MCP server manifest in the exact shape `core/mcp_gov/manifest.py` scans, with its own variable validations mirroring the scanner's rules (wildcard or admin scopes, non-DNS/loopback/metadata URLs, broad audience, duplicate tools, open input schemas) and a per-environment workspace guard so a bad connector config fails at `terraform plan` before it ever reaches the scanner. Never talks to a real platform — only the `local` provider, rendering JSON files to disk. See [`infra/terraform/README.md`](infra/terraform/README.md). |
 
 ## Guarantees (enforced in code, covered by tests)
 
@@ -53,8 +53,12 @@ scripts/start.sh                                         # dashboard at http://1
 - **Isolation.** Each run gets its own git worktree, its own port pair (backend 9100–9149, frontend 9150–9199), and its own database file. No secrets are copied into worktrees, and subprocesses get an allowlisted environment.
 - **`--dangerously-skip-permissions`** is only used inside `trees/<adw_id>` **and** with `TAC_ALLOW_SKIP_PERMISSIONS=1`. Otherwise agents run under `settings.json` with a fail-closed `PreToolUse` hook.
 - **Narrow self-healing.** One failing check leads to one focused repair agent. The loop stops when failures stop changing.
-- **Gates judge from the main checkout.** Gate commands and templates can't be weakened by the agent being judged.
-- **Zero-Touch shipping is locked.** It requires an operator flag, a domain policy that allows it, all eight gates green (E2E not skipped), budget left, and green PR checks. The merge happens server-side, never in your checkout.
+- **Gates judge from the main checkout.** Gate commands, templates, settings and hooks come from the main checkout, so the agent being judged can't weaken them. Branches that edit guardrails (`.claude/`, CI, `.mcp.json`, `CLAUDE.md`), gate configuration (`[tool.pytest]`, `[tool.ruff]`, `[tool.mypy]`, `[tool.tac]`, npm build/test scripts) or test collection fail the red-team gate.
+- **A skipped test is not a pass.** Unless it is listed in `[tool.tac].allowed_skips` of the main checkout.
+- **Verdicts are bound to commits.** Every gate records the commit it judged. If review patches change code after the tests ran, test and review re-run until no verdict is stale; red team runs last, on the final diff.
+- **Agents hold no GitHub or Jev credentials.** The orchestrator pushes, opens PRs and calls Jev itself. Code the agent wrote (gates, the app under test) runs with no credentials at all, and the hook only lets network clients reach localhost.
+- **Zero-Touch shipping is locked.** It requires an operator flag, a domain policy that allows it, all eight gates green on the commit being merged (E2E not skipped, E2E passes backed by screenshots), budget left, and green PR checks. The merge happens server-side with `--match-head-commit`, never in your checkout.
+- **Lessons need a human.** `/reflect` only stages lessons in `agent/lessons/pending/`; nothing reaches a future prompt until you run `uv run python -m adws.adw_modules.memory approve <slug>`.
 - **Budgets.** Cost per run is tracked from Claude Code's own accounting. Heavy commands are downgraded at 80% of the budget, and agent calls stop at 100%.
 
 ## Jev typed decisions (advisory only)
@@ -76,14 +80,15 @@ and principle 17 in [00-principles](docs/playbook/00-principles.md).
 
 ```bash
 # .env
-JEV_BACKEND=mock        # default: offline, deterministic, zero cost, no network
+JEV_BACKEND=mock        # default: offline keyword stand-in; answers only in TAC_AGENT_RUNNER=mock runs
 JEV_BACKEND=typesafe    # TypeSafe's own endpoint — needs TYPESAFE_API_KEY (console.typesafe.ai/keys)
 JEV_BACKEND=openrouter  # OpenRouter's decision endpoint — needs OPENROUTER_API_KEY
 JEV_BACKEND=live        # alias: prefers TYPESAFE_API_KEY, then OPENROUTER_API_KEY, whichever is set
 ```
 
 If a live provider ever has an outage or a bad key, set `JEV_BACKEND=mock` and every workflow that
-uses Jev keeps working unchanged — it was always advisory, never load-bearing.
+uses Jev keeps working unchanged — it was always advisory, never load-bearing. With a live backend,
+the issue title, body and labels are sent to that provider.
 
 ## Playbook
 

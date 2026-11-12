@@ -16,7 +16,7 @@ TEMPLATES = {
     "implement": "Implement $1",
     "resolve_failed_test": "Fix $1",
     "resolve_failed_e2e_test": "Fix e2e $1",
-    "test_e2e": "E2E $1 $2 $3 $4",
+    "test_e2e": "E2E $1 $2 $3 $4 $5",
     "review": "Review $1 $2 $3 $4",
     "patch": "Patch $1 $2 $3 $4",
     "document": "Document $1 $2 $3 $4",
@@ -48,6 +48,11 @@ max_review_patches = 1
 """
 
 
+SETTINGS = """{"hooks": {"PreToolUse": [{"matcher": "", "hooks": [{"type": "command",
+  "command": "uv run --script \\"$CLAUDE_PROJECT_DIR/.claude/hooks/pre_tool_use.py\\" || exit 2"}]}]}}
+"""
+
+
 def git(cwd: Path, *args: str) -> str:
     return subprocess.run(["git", *args], cwd=cwd, check=True, capture_output=True, text=True).stdout
 
@@ -58,10 +63,11 @@ def tac_root(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Path:
     (root / ".claude" / "commands").mkdir(parents=True)
     for name, body in TEMPLATES.items():
         (root / ".claude" / "commands" / f"{name}.md").write_text(body + "\n")
+    (root / ".claude" / "settings.json").write_text(SETTINGS)
     (root / "pyproject.toml").write_text(PYPROJECT)
     (root / "tests").mkdir()
     (root / "tests" / "test_ok.py").write_text("def test_ok():\n    assert 1 + 1 == 2\n")
-    (root / ".gitignore").write_text("agent/runs/\ntrees/\n__pycache__/\n")
+    (root / ".gitignore").write_text("agent/runs/\nagent/*.db\ntrees/\n__pycache__/\n")
     git(root, "init", "-q", "-b", "main")
     git(root, "config", "user.email", "t@example.com")
     git(root, "config", "user.name", "t")

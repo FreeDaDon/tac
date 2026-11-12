@@ -90,10 +90,14 @@ def create_pr(branch: str, title: str, body: str) -> str:
     return out.strip().splitlines()[-1]
 
 
-def merge_pr(branch: str) -> str:
-    """Squash-merge via GitHub (server side). Never touches the local main checkout."""
+def merge_pr(branch: str, head_sha: str) -> str:
+    """Squash-merge via GitHub (server side), only if the PR head is still the commit the gates and
+    checks judged. Never touches the local main checkout."""
     validate_branch_name(branch)
-    return gh("pr", "merge", branch, "-R", repo_path(), "--squash", "--delete-branch", timeout=120)
+    if not re.fullmatch(r"[0-9a-f]{40}", head_sha):
+        raise GitHubError(f"refusing to merge without a verified head commit (got {head_sha!r})")
+    return gh("pr", "merge", branch, "-R", repo_path(), "--squash", "--delete-branch",
+              "--match-head-commit", head_sha, timeout=120)
 
 
 def pr_checks_green(branch: str) -> bool:
@@ -102,4 +106,4 @@ def pr_checks_green(branch: str) -> bool:
     except GitHubError:
         return False
     checks = json.loads(out or "[]")
-    return all(c.get("state") in ("SUCCESS", "SKIPPED", "NEUTRAL") for c in checks)
+    return bool(checks) and all(c.get("state") in ("SUCCESS", "SKIPPED", "NEUTRAL") for c in checks)

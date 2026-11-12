@@ -7,6 +7,7 @@ from core.soc.logs import (
     detect_impossible_travel,
     haversine_km,
     parse_auth_line,
+    parse_auth_log,
     parse_json_event,
 )
 
@@ -18,7 +19,8 @@ def fail(ip, user, minutes):
 
 
 def test_parse_auth_lines():
-    e = parse_auth_line("Mar  5 01:02:03 h sshd[1]: Failed password for invalid user bob from 1.2.3.4 port 22 ssh2")
+    e = parse_auth_line("Mar  5 01:02:03 h sshd[1]: Failed password for invalid user bob from 1.2.3.4 port 22 ssh2",
+                        year=2024)
     assert e and e.outcome == "failure" and e.user == "bob" and e.invalid_user and e.source_ip == "1.2.3.4"
     assert e.timestamp == datetime(2024, 3, 5, 1, 2, 3, tzinfo=UTC)
     a = parse_auth_line("2024-03-10T10:00:00Z h sshd[9]: Accepted publickey for ann from 10.0.0.1 port 5 ssh2")
@@ -94,3 +96,61 @@ def test_travel_needs_geo_and_speed():
                  AuthEvent(T0, "auth", "success", "d", lat=35.68, lon=139.69)]
     [f] = detect_impossible_travel(same_time)
     assert f.evidence["speed_kmh"] is None
+
+
+def test_spoofed_username_cannot_change_the_source_ip():
+    spoof = "x from 10.0.0.5 port 1 ssh2"
+    failed = parse_auth_line(f"Mar  5 01:02:03 h sshd[1]: Failed password for invalid user {spoof} "
+                             "from 6.6.6.6 port 4242 ssh2", year=2024)
+    invalid = parse_auth_line(f"Mar  5 01:02:03 h sshd[1]: Invalid user {spoof} from 6.6.6.6 port 4242", year=2024)
+    accepted = parse_auth_line("Mar  5 01:02:03 h sshd[1]: Accepted publickey for ann from 7.7.7.7 port 5 ssh2: "
+                               "RSA SHA256:abc", year=2024)
+    tail_spoof = parse_auth_line(f"Mar  5 01:02:03 h sshd[1]: Failed password for invalid user {spoof}: y "
+                                 "from 6.6.6.6 port 4242 ssh2", year=2024)
+    assert tail_spoof and tail_spoof.source_ip == "6.6.6.6"
+    assert failed and (failed.source_ip, failed.user) == ("6.6.6.6", spoof)
+    assert invalid and invalid.source_ip == "6.6.6.6"
+    assert accepted and (accepted.source_ip, accepted.user) == ("7.7.7.7", "ann")
+
+
+def test_bruteforce_is_not_hidden_by_unrelated_users_hours_apart():
+    events = [AuthEvent(T0 + timedelta(seconds=s), "auth", "failure", "root", "5.5.5.5") for s in range(50)]
+    events += [fail("5.5.5.5", f"user{i}", 60 * (i + 1)) for i in range(4)]
+    assert [f.rule_id for f in detect_bruteforce(events)] == ["SOC-BRUTEFORCE"]
+
+
+def test_spraying_burst_is_left_to_the_spray_detector():
+    events = [fail("5.5.5.5", f"user{i}", i) for i in range(6)]
+    assert detect_bruteforce(events) == []
+
+
+def test_success_long_after_the_burst_does_not_escalate():
+    events = [fail("5.5.5.5", "root", m) for m in range(6)]
+    events.append(AuthEvent(T0 + timedelta(hours=3), "auth", "success", "root", "5.5.5.5"))
+    assert [f.rule_id for f in detect_bruteforce(events)] == ["SOC-BRUTEFORCE"]
+    events.append(AuthEvent(T0 + timedelta(minutes=30), "auth", "success", "root", "5.5.5.5"))
+    assert [f.rule_id for f in detect_bruteforce(events)] == ["SOC-BRUTEFORCE-SUCCESS"]
+
+
+def test_syslog_year_rollover_and_default_year():
+    lines = ["Dec 31 23:59:00 h sshd[1]: Failed password for root from 1.1.1.1 port 1 ssh2",
+             "Jan  1 00:01:00 h sshd[1]: Failed password for root from 1.1.1.1 port 1 ssh2"]
+    events, bad = parse_auth_log(lines, year=2024)
+    assert [e.timestamp.date().isoformat() for e in events] == ["2024-12-31", "2025-01-01"] and bad == 0
+    events, _ = parse_auth_log(lines[:1])
+    now = datetime.now(UTC)
+    assert events[0].timestamp <= now + timedelta(days=1) and events[0].timestamp.year >= now.year - 1
+
+
+def test_malformed_lines_are_skipped_and_counted(tmp_path):
+    syslog = tmp_path / "auth.log"
+    syslog.write_text("Feb 30 10:00:00 h sshd[1]: Failed password for root from 1.1.1.1 port 1 ssh2\n"
+                      "Mar  1 10:00:00 h sshd[1]: Failed password for root from 1.1.1.1 port 1 ssh2\n")
+    report = analyze_file(syslog, year=2024)
+    assert (report.metrics["events"], report.metrics["bad_lines"]) == (1, 1)
+    jsonl = tmp_path / "events.jsonl"
+    jsonl.write_text('{"@timestamp": "not-a-date", "event": {"action": "login"}, "user": {"name": "a"}}\n'
+                     "{broken\n"
+                     '{"@timestamp": "2024-01-01T00:00:00Z", "event": {"action": "login"}, "user": {"name": "a"}}\n')
+    report = analyze_file(jsonl)
+    assert (report.metrics["events"], report.metrics["bad_lines"]) == (1, 2)

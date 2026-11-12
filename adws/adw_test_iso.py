@@ -12,6 +12,7 @@ from __future__ import annotations
 
 import argparse
 import json
+import time
 from pathlib import Path
 
 from adws.adw_modules import telemetry
@@ -20,10 +21,11 @@ from adws.adw_modules.agent import execute_template, write_input_file
 from adws.adw_modules.app_runner import running_app
 from adws.adw_modules.cli import main_wrapper, require_state
 from adws.adw_modules.data_types import AgentRequest, E2ETestResult, GateResult, TestResult
-from adws.adw_modules.gates import gate_commands, run_command_gate, run_unit_tests, tac_config
+from adws.adw_modules.gates import gate_commands, run_command_gate, run_unit_tests, stamp, tac_config
 from adws.adw_modules.repair import repair_loop
+from adws.adw_modules.security import SecurityError, resolve_inside
 from adws.adw_modules.state import ADWState
-from adws.adw_modules.utils import parse_json, project_root
+from adws.adw_modules.utils import parse_json, project_root, run_dir
 from adws.adw_modules.worktree_ops import validate_worktree
 
 WORKFLOW = "adw_test_iso"
@@ -54,6 +56,7 @@ def _check_suite(state: ADWState) -> tuple[list[TestResult], dict[str, GateResul
 
 
 def run_checks_with_repair(state: ADWState) -> bool:
+    """Run the static and unit gates with repair, commit the repairs, and record verdicts for that commit."""
     cfg = tac_config()
     latest: dict[str, GateResult] = {}
 
@@ -65,10 +68,11 @@ def run_checks_with_repair(state: ADWState) -> bool:
 
     passed, _ = repair_loop(state.adw_id, state.working_dir(), run_once, "/resolve_failed_test",
                             int(cfg.get("max_test_repairs", 4)), label="test")
+    ops.commit(state, "test_resolver", "fix failing checks")
     state.reload()
     report = state.gate_report()
     for gate in latest.values():
-        report.upsert(gate)
+        report.upsert(stamp(gate, state.working_dir()))
     state.save()
     return passed and all(g.status in ("passed", "skipped") for g in latest.values())
 
@@ -76,6 +80,22 @@ def run_checks_with_repair(state: ADWState) -> bool:
 def _e2e_specs() -> list[Path]:
     spec_dir = project_root() / str(tac_config().get("e2e_specs", ".claude/commands/e2e"))
     return sorted(spec_dir.glob("test_*.md")) if spec_dir.exists() else []
+
+
+def missing_evidence(result: E2ETestResult, adw_id: str, since: float) -> str | None:
+    """A 'passed' self-report counts only with screenshots this call wrote inside the run's directory."""
+    if not result.passed:
+        return None
+    if not result.screenshots:
+        return "reported passed without screenshot evidence"
+    for shot in result.screenshots:
+        try:
+            path = resolve_inside(run_dir(adw_id), shot)
+        except SecurityError:
+            return f"screenshot outside the run directory: {shot}"
+        if not path.is_file() or path.stat().st_size == 0 or path.stat().st_mtime < since:
+            return f"screenshot missing, empty, or older than this test: {shot}"
+    return None
 
 
 def run_e2e_with_repair(state: ADWState) -> GateResult:
@@ -90,13 +110,19 @@ def run_e2e_with_repair(state: ADWState) -> GateResult:
     def run_all(url: str, attempt: int) -> list[E2ETestResult]:
         out = []
         for i, spec in enumerate(specs):
+            started = time.time() - 1
             resp = execute_template(AgentRequest(
                 adw_id=state.adw_id, agent_name=f"e2e_runner_{attempt}_{i}", slash_command="/test_e2e",
-                args=[state.adw_id, f"e2e_runner_{attempt}_{i}", str(spec), url], working_dir=wt))
+                args=[state.adw_id, f"e2e_runner_{attempt}_{i}", str(spec), url,
+                      str(run_dir(state.adw_id) / f"e2e_runner_{attempt}_{i}" / "img")], working_dir=wt))
             try:
                 if not resp.success:
                     raise ValueError(resp.output[:500])
-                out.append(parse_json(resp.output, E2ETestResult))
+                result = parse_json(resp.output, E2ETestResult)
+                problem = missing_evidence(result, state.adw_id, started)
+                if problem:
+                    raise ValueError(problem)
+                out.append(result)
             except ValueError as exc:
                 out.append(E2ETestResult(test_name=spec.stem, status="failed", test_path=str(spec),
                                          error=f"no valid result: {exc}"))
@@ -131,12 +157,12 @@ def run(adw_id: str, skip_e2e: bool = False) -> bool:
 
     with ops.phase(state, "test"):
         checks_ok = run_checks_with_repair(state)
-        ops.commit(state, "test_resolver", "fix failing checks")
         if skip_e2e:
             e2e = GateResult(name="e2e", status="skipped", detail="skipped by operator (--skip-e2e)")
         else:
             e2e = run_e2e_with_repair(state)
             ops.commit(state, "e2e_resolver", "fix failing e2e tests")
+        e2e = stamp(e2e, state.working_dir())
         state.reload()
         state.gate_report().upsert(e2e)
         state.update(e2e_skipped=skip_e2e)

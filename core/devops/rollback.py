@@ -9,7 +9,7 @@ from typing import Any, Literal
 from pydantic import BaseModel, Field
 
 from core.common import AnalysisReport, Finding
-from core.devops.drift import diff_attributes
+from core.devops.drift import change_mask, diff_attributes
 from core.devops.tfplan import classify_actions, is_critical_type, load_plan, managed_changes
 
 TOOL = "rollback"
@@ -53,7 +53,7 @@ def _step(order: int, rc: dict[str, Any], kind: str) -> RollbackStep | None:
                             reversible=True, data_loss_risk=False,
                             command_preview=f"terraform destroy {target}  # after reviewing its dependents")
     if kind == "update":
-        attrs = diff_attributes(change.get("before") or {}, change.get("after") or {})
+        attrs = diff_attributes(change.get("before") or {}, change.get("after") or {}, sensitive=change_mask(change))
         return RollbackStep(order=order, address=address, resource_type=rtype, original_action=kind,
                             rollback_action="revert_update", attributes=attrs,
                             description=f"Restore {len(attrs)} attribute(s) of {address} to their previous values",

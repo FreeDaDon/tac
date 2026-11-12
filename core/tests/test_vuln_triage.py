@@ -54,3 +54,12 @@ def test_prioritize_rules():
 def test_parse_kev_formats():
     assert parse_kev(["cve-1"]) == frozenset({"CVE-1"})
     assert parse_kev({"cveIDs": ["CVE-2"], "vulnerabilities": [{"cveID": "CVE-3"}]}) == frozenset({"CVE-2", "CVE-3"})
+
+
+def test_null_description_does_not_crash(tmp_path):
+    scan = tmp_path / "grype.json"
+    scan.write_text(json.dumps({"matches": [{"vulnerability": {"id": "CVE-2024-1", "severity": "High",
+                                                               "description": None},
+                                             "artifact": {"name": "pkg", "version": "1"}}]}))
+    [finding] = analyze_file(scan).findings
+    assert finding.evidence["vuln_id"] == "CVE-2024-1"

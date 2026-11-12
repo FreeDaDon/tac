@@ -51,4 +51,4 @@ uv run adws/adw_domain_iso.py --pack iam --input core/fixtures/iam --propose   #
 
 1. Policy rule: add a check in `lint_statement` with the next free `IAM0NN` id, plus a positive and a negative test in `core/tests/test_iam_policy.py`.
 2. Audit rule: add it to `audit_user` or `audit_inventory`. If it should lead to action, map it in `revoke.steps_for`, and keep previews read-only in spirit and quoted with `shlex.quote`.
-3. New input kind: write `analyze_file(path, **opts) -> AnalysisReport`, then register it in `PACK_TOOLS["iam"]` and `_detect_iam`.
+3. New input kind: write `analyze_file(path, **opts) -> AnalysisReport`, then register it in the `Pack` entry for `iam` in `PACKS` (`core/registry.py`: its `tools` map and its detector).

@@ -23,3 +23,13 @@ tasks.md
 !core/fixtures/**/*.log
 agent/hook_logs/
 agent_data/
+.terraform/
+*.tfstate
+*.tfstate.backup
+.terraform.tfstate.lock.info
+*.tfplan
+crash.log
+crash.*.log
+infra/terraform/**/rendered/
+infra/terraform/**/state/
+infra/terraform/**/terraform.tfstate.d/

@@ -34,7 +34,7 @@ into a report or prompt.
 ## Secret findings and the allowlist
 
 - A finding never contains the secret. It carries only the first 4 characters, the length and a 16-hex sha256 `fingerprint`.
-- `.secretsallow` at the repo root holds path globs relative to that file, such as `core/fixtures/**`, or `fingerprint:<hex16>` lines. The scanner uses the nearest `.secretsallow` at or above the scan root, so worktrees under `trees/` apply their own copy.
+- `.secretsallow` at the scan root holds path globs relative to that file, such as `core/fixtures/**`, or `fingerprint:<hex16>` lines. Only the scan root's own file is read (no upward search), wildcard-only globs such as `*` or `**/*` are ignored, and suppressions are counted in `metrics.suppressed_by_glob` / `suppressed_by_fingerprint`. The `secret_scan` gate scans a worktree with the main checkout's `.secretsallow` only, so an agent cannot allowlist its own secrets.
 - Allowlist a fingerprint for a known test value. Never allowlist a whole source directory to make a gate pass.
 
 ## The agent's role
@@ -59,4 +59,4 @@ uv run adws/adw_domain_iso.py --pack swe --input . --no-agent
 
 1. New credential format: add a `SecretRule` to `RULES` in `secret_scan.py`. Test it with a value built by string concatenation, so the test file itself stays clean. Add a negative case.
 2. New SQL signature: add it to `INJECTION_PATTERNS` or `UNION_INJECTION_PATTERNS` in `sql_security.py`, with legitimate queries that must still pass.
-3. New tool: write `analyze_file(path, **opts) -> AnalysisReport` and register it in `PACK_TOOLS["swe"]`. Directories default to `secret_scan`.
+3. New tool: write `analyze_file(path, **opts) -> AnalysisReport` and register it in the `Pack` entry for `swe` in `PACKS` (`core/registry.py`: its `tools` map and its detector). Directories default to `secret_scan`.

@@ -5,6 +5,7 @@ from __future__ import annotations
 import json
 import os
 import sys
+import urllib.error
 import urllib.request
 from typing import Any
 
@@ -43,20 +44,33 @@ def _echo(event: TelemetryEvent) -> None:
           file=sys.stderr, flush=True)
 
 
+_auth_warned = False
+
+
 def _push(event: TelemetryEvent) -> None:
+    global _auth_warned
     url = os.getenv("TAC_DASHBOARD_URL")
     if not url or os.getenv("TAC_TELEMETRY_PUSH", "1") == "0":
         return
     if not url.startswith(("http://", "https://")):
         return
+    headers = {"Content-Type": "application/json"}
+    token = os.getenv("TAC_DASHBOARD_TOKEN")
+    if token:
+        headers["Authorization"] = f"Bearer {token}"
     try:
         req = urllib.request.Request(  # noqa: S310 - scheme validated above
             url.rstrip("/") + "/api/events",
             data=event.model_dump_json().encode(),
-            headers={"Content-Type": "application/json"},
+            headers=headers,
             method="POST",
         )
         urllib.request.urlopen(req, timeout=1.5).close()  # noqa: S310
+    except urllib.error.HTTPError as exc:
+        if exc.code in (401, 403) and not _auth_warned:
+            _auth_warned = True
+            print(f"telemetry: dashboard rejected events ({exc.code}); check TAC_DASHBOARD_TOKEN",
+                  file=sys.stderr, flush=True)
     except Exception:  # noqa: BLE001, S110
         pass
 

@@ -14,7 +14,7 @@ from datetime import datetime
 from pathlib import Path
 from typing import Any
 
-from core.common import AnalysisReport, Finding, FindingSeverity
+from core.common import AnalysisReport, Finding, FindingSeverity, bump_severity
 from core.gcp_sre import events as ev
 from core.gcp_sre.logs import normalize
 from core.security.sanitize import snippet
@@ -45,7 +45,6 @@ _MARKERS: tuple[tuple[str, FindingSeverity, str, re.Pattern[str], str], ...] = (
 )
 _NET_CODES = re.compile(r"\b(ECONNREFUSED|ECONNRESET|ETIMEDOUT|ENOTFOUND|EAI_AGAIN|EPIPE|EHOSTUNREACH|ENETUNREACH)\b")
 _CODE_DEFECTS = frozenset({"TypeError", "ReferenceError", "RangeError", "SyntaxError"})
-_SEV_ORDER: tuple[FindingSeverity, ...] = ("info", "low", "medium", "high", "critical")
 
 
 @dataclass(frozen=True)
@@ -160,10 +159,6 @@ def _iso(ts: datetime | None) -> str | None:
     return ts.isoformat() if ts else None
 
 
-def _bump(severity: FindingSeverity, count: int, threshold: int) -> FindingSeverity:
-    return _SEV_ORDER[min(3, _SEV_ORDER.index(severity) + 1)] if count >= threshold and severity in ("low", "medium") else severity
-
-
 def _classify(g: _Group, source: str, threshold: int) -> Finding:
     t = g.trace
     top = t.top_app_frame or t.top_frame
@@ -204,7 +199,7 @@ def _classify(g: _Group, source: str, threshold: int) -> Finding:
                                  "Check the dependency version and how the application calls it.")
     else:
         rule, sev, title, rec = ("NODE-ERROR", "low", f"{t.type} stack trace", "Triage by top frame and frequency.")
-    return Finding(rule_id=rule, title=title, severity=_bump(sev, g.count, threshold), category="node", resource=source,
+    return Finding(rule_id=rule, title=title, severity=bump_severity(sev) if g.count >= threshold and sev in ("low", "medium") else sev, category="node", resource=source,
                    location=location, evidence=evidence, recommendation=rec)
 
 

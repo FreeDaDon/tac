@@ -16,7 +16,7 @@ from adws.adw_modules.cli import main_wrapper, require_state
 from adws.adw_modules.data_types import AgentRequest
 from adws.adw_modules.git_ops import diff_stat
 from adws.adw_modules.kpis import row_from_state, upsert
-from adws.adw_modules.memory import Lesson, write_lesson
+from adws.adw_modules.memory import Lesson, stage_lesson
 from adws.adw_modules.security import resolve_inside
 from adws.adw_modules.state import ADWState
 from adws.adw_modules.utils import parse_json
@@ -35,7 +35,7 @@ def record_kpis(state: ADWState, shipped: bool = False) -> None:
 
 
 def reflect(state: ADWState) -> int:
-    """Write durable lessons when the run needed repairs or hit review blockers."""
+    """Stage lessons (for human approval) when the run needed repairs or hit review blockers."""
     events = telemetry.read_events(state.adw_id)
     repairs = [e for e in events if e["event_type"] == "repair" and "attempt 1:" not in e["message"]]
     failed_gates = [g.model_dump() for g in (state.data.gate_report.gates if state.data.gate_report else [])
@@ -56,7 +56,7 @@ def reflect(state: ADWState) -> int:
     except ValueError:
         return 0
     for lesson in lessons[:3]:
-        write_lesson(lesson.model_copy(update={"source_adw": state.adw_id}))
+        stage_lesson(lesson.model_copy(update={"source_adw": state.adw_id}))
         telemetry.emit(state.adw_id, "lesson", message=lesson.title)
     return len(lessons[:3])
 

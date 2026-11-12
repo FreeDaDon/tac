@@ -16,20 +16,36 @@ from pathlib import Path
 from typing import Any
 from urllib.parse import urlparse
 
-from core.common import SEVERITY_ORDER, AnalysisReport, Finding, FindingSeverity
+from core.common import (
+    SEVERITY_ORDER,
+    AnalysisReport,
+    Finding,
+    FindingSeverity,
+    as_list,
+    parse_bool,
+    risk_score,
+)
 from core.loaders import load_structured
 from core.mcp_gov import injection, rbac
 from core.security.sanitize import sanitize_untrusted
 from core.security.secret_scan import RULES as SECRET_RULES
 
 TOOL = "mcp_manifest"
-SEVERITY_WEIGHTS = {"critical": 40, "high": 20, "medium": 8, "low": 3, "info": 0}
 LOCAL_HOSTS = frozenset({"localhost", "127.0.0.1", "::1"})
 SHELLS = frozenset({"sh", "bash", "zsh", "dash", "cmd", "cmd.exe", "powershell", "pwsh", "powershell.exe"})
 INLINE_FLAGS = {"python": ("-c",), "python3": ("-c",), "node": ("-e", "--eval"), "deno": ("eval",), "ruby": ("-e",),
                 "perl": ("-e",), "sh": ("-c",), "bash": ("-c",), "zsh": ("-c",), "cmd": ("/c", "/k"),
                 "powershell": ("-command", "-c", "-encodedcommand", "-enc"), "pwsh": ("-command", "-c", "-enc")}
 PACKAGE_RUNNERS = frozenset({"npx", "bunx", "uvx", "pipx", "pnpm", "dlx"})
+# `docker run` options that take the next argument as their value (so it is not mistaken for the image).
+DOCKER_VALUE_FLAGS = frozenset({
+    "-a", "--attach", "--add-host", "--cap-add", "--cap-drop", "--cgroupns", "--cidfile", "--cpus", "--cpu-shares",
+    "-c", "--device", "--dns", "--entrypoint", "-e", "--env", "--env-file", "--expose", "--gpus", "--group-add",
+    "-h", "--hostname", "--ipc", "-l", "--label", "--log-driver", "--log-opt", "-m", "--memory", "--mount", "--name",
+    "--net", "--network", "--network-alias", "--pid", "--platform", "-p", "--publish", "--pull", "--restart",
+    "--runtime", "--security-opt", "--shm-size", "--stop-signal", "--tmpfs", "-u", "--user", "--ulimit", "--userns",
+    "--uts", "-v", "--volume", "--volumes-from", "-w", "--workdir",
+})
 SECRET_KEY_HINT = re.compile(r"(?i)(secret|token|passw(?:or)?d|api[_-]?key|access[_-]?key|private[_-]?key|credential|authorization)")
 SECRET_REFERENCE = re.compile(r"^\s*(?:\$\{?[A-Za-z_]|\{\{|secret://|vault:|op://|env:|gcp-sm://|aws-sm://|keychain:)")
 BUILTIN_TOOL_NAMES = frozenset({"bash", "read", "write", "edit", "glob", "grep", "webfetch", "websearch", "task"})
@@ -100,10 +116,10 @@ def _server(name: str, raw: dict[str, Any]) -> McpServer:
     command = str(raw.get("command") or "")
     transport = str(raw.get("transport") or raw.get("type") or ("stdio" if command else "http" if url else "")).lower()
     return McpServer(name=str(raw.get("name") or name), raw=raw, transport=transport, url=url, command=command,
-                     args=[str(a) for a in raw.get("args") or []], env=_dict(raw.get("env")),
+                     args=[str(a) for a in as_list(raw.get("args"))], env=_dict(raw.get("env")),
                      headers=_dict(raw.get("headers")), auth=auth, scopes=scopes, groups=groups,
-                     tools=[t for t in raw.get("tools") or [] if isinstance(t, dict)],
-                     resources=raw.get("resources") or raw.get("roots") or [])
+                     tools=[t for t in as_list(raw.get("tools")) if isinstance(t, dict)],
+                     resources=as_list(raw.get("resources") or raw.get("roots")))
 
 
 def parse_servers(data: Any) -> list[McpServer]:
@@ -178,6 +194,36 @@ def check_transport(s: McpServer) -> list[Finding]:
     return out
 
 
+def _docker_run(args: list[str]) -> tuple[list[tuple[str, str]], str]:
+    """(options as (flag, value) pairs, image) of a `docker run` argument list; the image is the first positional."""
+    rest = args[args.index("run") + 1:]
+    options: list[tuple[str, str]] = []
+    i = 0
+    while i < len(rest):
+        arg = rest[i]
+        if not arg.startswith("-") or arg == "-":
+            return options, arg
+        if arg.startswith("--") and "=" in arg:
+            flag, _, value = arg.partition("=")
+        elif arg in DOCKER_VALUE_FLAGS:
+            flag, value = arg, rest[i + 1] if i + 1 < len(rest) else ""
+            i += 1
+        elif not arg.startswith("--") and arg[:2] in DOCKER_VALUE_FLAGS:
+            flag, value = arg[:2], arg[2:]
+        else:
+            flag, value = arg, ""
+        options.append((flag, value))
+        i += 1
+    return options, ""
+
+
+def _privileged_docker_option(flag: str, value: str) -> bool:
+    return (flag == "--privileged" or "docker.sock" in value
+            or (flag in ("--network", "--net", "--pid", "--ipc") and value == "host")
+            or (flag == "--cap-add" and value.upper().removeprefix("CAP_") in ("ALL", "SYS_ADMIN"))
+            or (flag in ("-v", "--volume") and value.startswith("/:")))
+
+
 def check_launch(s: McpServer) -> list[Finding]:
     """stdio launch command: inline code, unpinned packages, privileged containers."""
     if not s.command:
@@ -208,14 +254,12 @@ def check_launch(s: McpServer) -> list[Finding]:
                           "Pass a dedicated working directory, never / or $HOME.", location=f"{s.name}:args[{i}]",
                           argument=sanitize_untrusted(arg, 80)))
     if exe == "docker" and "run" in args:
-        risky = [a for a in args if a in ("--privileged", "--network=host", "--pid=host", "--cap-add=ALL")
-                 or "docker.sock" in a or a.startswith(("-v/:", "--volume=/:"))]
-        if risky or any(a in ("-v", "--volume") and i + 1 < len(args) and args[i + 1].startswith("/:")
-                        for i, a in enumerate(args)):
+        options, image = _docker_run(args)
+        risky = [f"{flag} {value}".strip() for flag, value in options if _privileged_docker_option(flag, value)]
+        if risky:
             out.append(_f("MCP-CONTAINER-PRIV", "high", "execution", "Container launched with host-level privileges", s,
                           "Remove privileged flags and host mounts; grant only the specific mounts required.",
                           flags=sanitize_untrusted(" ".join(risky), 200)))
-        image = next((a for a in reversed(args) if not a.startswith("-") and ("/" in a or ":" in a or a.isalnum())), "")
         if image and "@sha256:" not in image and (":" not in image.rsplit("/", 1)[-1] or image.endswith(":latest")):
             out.append(_f("MCP-IMAGE-UNPINNED", "medium", "supply-chain", "Container image is not pinned by digest", s,
                           "Pin the image by @sha256 digest from the approved registry.", image=sanitize_untrusted(image, 120)))
@@ -224,7 +268,8 @@ def check_launch(s: McpServer) -> list[Finding]:
 
 def check_secrets(s: McpServer) -> list[Finding]:
     out: list[Finding] = []
-    sources = [("env", s.env), ("headers", s.headers)]
+    sources = [("env", s.env), ("headers", s.headers), ("auth", s.auth)]
+    sources += [(f"auth.{k}", v) for k, v in s.auth.items() if isinstance(v, dict)]
     for where, mapping in sources:
         for key, value in mapping.items():
             if _is_secret_literal(str(key), value):
@@ -367,16 +412,12 @@ def audit_server(s: McpServer, policy: rbac.RbacPolicy, max_tools: int = 25) -> 
             *check_tools(s, max_tools), *check_resources(s), *check_provenance(s), *scan_strings(s)]
 
 
-def risk_score(findings: list[Finding]) -> int:
-    return min(100, sum(SEVERITY_WEIGHTS[f.severity] for f in findings))
-
-
 def analyze_file(path: Path, **opts: Any) -> AnalysisReport:
     """Options: `allowed_scopes` (comma list), `max_tools` (int, default 25), `require_audience` (bool, default true)."""
     path = Path(path)
     servers = parse_servers(load_structured(path))
     policy = rbac.RbacPolicy(allowed_scopes=frozenset(_str_list(opts.get("allowed_scopes", ""))),
-                             require_audience=bool(opts.get("require_audience", True)))
+                             require_audience=parse_bool(opts.get("require_audience", True)))
     max_tools = int(opts.get("max_tools", 25))
     findings: list[Finding] = []
     for s in servers:

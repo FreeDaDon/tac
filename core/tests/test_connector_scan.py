@@ -1,3 +1,5 @@
+import time
+
 from core.mcp_gov.injection import analyze_file, scan_text
 
 
@@ -62,3 +64,21 @@ def test_lockfiles_and_binaries_skipped(tmp_path):
     (tmp_path / "blob.bin").write_bytes(b"\x00ignore previous instructions")
     report = analyze_file(tmp_path)
     assert report.findings == [] and report.metrics["files_scanned"] == 0
+
+
+def test_rules_are_linear_on_hostile_long_lines(tmp_path):
+    for unit in ("cu" + "rl ", "<!-- ", "![a](http://x/?", "yaml.load("):
+        target = tmp_path / "hostile.txt"
+        target.write_text(unit * (50_000 // len(unit)) + "\n")
+        started = time.perf_counter()
+        analyze_file(target)
+        assert time.perf_counter() - started < 2, unit
+
+
+def test_truncation_keeps_the_most_severe_findings(tmp_path):
+    egress = "requests.post(url, data=payload)\n" * 250
+    (tmp_path / "tool.py").write_text("key = open('/root/.ssh/id_rsa').read()\n" + egress)
+    report = analyze_file(tmp_path)
+    rules = [f.rule_id for f in report.findings]
+    assert len(rules) == 200 and rules[:2] == ["EXF-CHAIN", "EXF-SENSITIVE-PATH"]
+    assert report.metrics["findings_truncated"] == 52

@@ -11,15 +11,20 @@ import subprocess
 import time
 import tomllib
 import xml.etree.ElementTree as ET  # noqa: S405 - parsing our own pytest output
+from fnmatch import fnmatch
 from pathlib import Path
 from typing import Any
 
-from .data_types import GateResult, GateStatus, TestResult
-from .security import safe_subprocess_env
+from .data_types import GateReport, GateResult, GateStatus, TestResult
+from .git_ops import git
+from .security import untrusted_code_env
 from .utils import project_root
 
 GATE_TIMEOUT_S = 1800
 ZTE_REQUIRED_GATES = ["lint", "types", "unit", "client", "e2e", "spec_review", "redteam", "secret_scan"]
+TEST_GATES = ("lint", "types", "unit", "client", "e2e")
+# Files the document phase writes after the code gates ran; a gate stays fresh across these.
+DEFAULT_POST_GATE_PATHS = ["docs/features/*", ".claude/commands/conditional_docs.md"]
 
 
 def tac_config() -> dict[str, Any]:
@@ -32,17 +37,41 @@ def gate_commands() -> dict[str, list[str]]:
     return {name: list(cmd) for name, cmd in gates.items()}
 
 
-def _gate_env() -> dict[str, str]:
-    env = safe_subprocess_env()
-    env.pop("ANTHROPIC_API_KEY", None)  # gates never need model access
-    env["VIRTUAL_ENV"] = ""
-    return env
+def head_sha(cwd: str | Path) -> str:
+    return git("rev-parse", "HEAD", cwd=cwd, check=False)
+
+
+def stamp(gate: GateResult, cwd: str | Path) -> GateResult:
+    """Bind a verdict to the commit it judged, so a later commit makes it stale. Call it after the
+    phase commits whatever it tested; a verdict on a dirty tree belongs to the commit that records it."""
+    return gate.model_copy(update={"head_sha": head_sha(cwd)})
+
+
+def stale_gates(report: GateReport, cwd: str | Path, names: list[str] | tuple[str, ...]) -> list[str]:
+    """Gates whose verdict predates a code change. Changes confined to post_gate_paths don't count."""
+    head = head_sha(cwd)
+    allowed = list(tac_config().get("post_gate_paths", DEFAULT_POST_GATE_PATHS))
+    stale = []
+    for name in names:
+        gate = report.get(name)
+        if gate is None or gate.status not in ("passed", "skipped") or gate.head_sha == head:
+            continue
+        if not gate.head_sha:
+            stale.append(name)
+            continue
+        proc = subprocess.run(["git", "diff", "--name-only", gate.head_sha, "HEAD"], cwd=str(cwd),
+                              capture_output=True, text=True, timeout=60)
+        changed = proc.stdout.split()
+        if proc.returncode != 0 or any(not any(fnmatch(f, pat) for pat in allowed) for f in changed):
+            stale.append(name)
+    return stale
 
 
 def run_command_gate(name: str, argv: list[str], cwd: str | Path, timeout: int = GATE_TIMEOUT_S) -> tuple[GateResult, str]:
     started = time.monotonic()
     try:
-        proc = subprocess.run(argv, cwd=str(cwd), capture_output=True, text=True, timeout=timeout, env=_gate_env())
+        proc = subprocess.run(argv, cwd=str(cwd), capture_output=True, text=True, timeout=timeout,
+                              env=untrusted_code_env())
         output = (proc.stdout + "\n" + proc.stderr).strip()
         status: GateStatus = "passed" if proc.returncode == 0 else "failed"
         detail = "" if status == "passed" else output[-4000:]
@@ -67,16 +96,19 @@ def parse_junit(xml_text: str) -> list[TestResult]:
         failure = case.find("failure")
         if failure is None:
             failure = case.find("error")
-        skipped = case.find("skipped") is not None
+        skipped = case.find("skipped")
         error = None
         if failure is not None:
             error = ((failure.get("message") or "") + "\n" + (failure.text or ""))[-3000:]
+        elif skipped is not None:
+            error = f"skipped ({skipped.get('message') or 'no reason'}); a skip is not a pass unless listed in " \
+                    "[tool.tac].allowed_skips of the main checkout"
         results.append(
             TestResult(
                 test_name=node,
-                passed=failure is None,
+                passed=failure is None and skipped is None,
                 execution_command=f"uv run pytest -q '{node}'",
-                test_purpose="skipped" if skipped else "",
+                test_purpose="skipped" if skipped is not None else "",
                 error=error,
             )
         )
@@ -105,6 +137,9 @@ def run_unit_tests(cwd: str | Path, report_dir: Path) -> tuple[GateResult, list[
         gate.status = "failed"
         gate.detail = str(exc)
         return gate, [TestResult(test_name="unit_suite", passed=False, execution_command=" ".join(argv), error=str(exc))]
+    allowed_skips = set(tac_config().get("allowed_skips", []))
+    results = [r.model_copy(update={"passed": True, "error": None})
+               if r.test_purpose == "skipped" and r.test_name in allowed_skips else r for r in results]
     failed = [r for r in results if not r.passed]
     if failed and gate.status == "passed":
         gate.status = "failed"
@@ -123,9 +158,13 @@ def run_secret_scan(cwd: str | Path) -> GateResult:
         from core.registry import run_pack
     except ImportError as exc:
         return GateResult(name="secret_scan", status="error", detail=f"secret scanner unavailable: {exc}")
-    reports = run_pack("swe", Path(cwd), tool="secret_scan")
+    # The worktree's own .secretsallow is agent-editable; only the main checkout's allowlist is trusted.
+    trusted = project_root() / ".secretsallow"
+    opts: dict[str, Any] = ({"allowlist": str(trusted), "allowlist_root": str(cwd)} if trusted.is_file()
+                            else {"use_allowlist": False})
+    reports = run_pack("swe", Path(cwd), tool="secret_scan", **opts)
     findings = [f for r in reports for f in r.findings]
     if findings:
         lines = [f"{f.rule_id} {f.location or f.resource}: {f.title}" for f in findings[:20]]
-        return GateResult(name="secret_scan", status="failed", detail="\n".join(lines))
-    return GateResult(name="secret_scan", status="passed", detail="no secrets found")
+        return stamp(GateResult(name="secret_scan", status="failed", detail="\n".join(lines)), cwd)
+    return stamp(GateResult(name="secret_scan", status="passed", detail="no secrets found"), cwd)

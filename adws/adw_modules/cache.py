@@ -16,6 +16,8 @@ import re
 import sqlite3
 import subprocess
 import time
+from collections.abc import Iterator
+from contextlib import closing, contextmanager
 from pathlib import Path
 
 from .data_types import AgentResponse
@@ -38,19 +40,24 @@ def normalize_prompt(prompt: str) -> str:
 
 
 def tree_hash(working_dir: str | None) -> str:
-    """Hash of the committed tree plus uncommitted diff; '' when not a git repo."""
+    """Hash of the committed tree, the uncommitted diff, and untracked files; '' when not a git repo."""
     if not working_dir:
         return ""
+    h = hashlib.sha256()
     try:
-        head = subprocess.run(
-            ["git", "rev-parse", "HEAD^{tree}"], cwd=working_dir, capture_output=True, text=True, timeout=10
-        ).stdout.strip()
-        diff = subprocess.run(
-            ["git", "diff", "HEAD"], cwd=working_dir, capture_output=True, text=True, timeout=30
-        ).stdout
+        for argv in (["git", "rev-parse", "HEAD^{tree}"], ["git", "diff", "HEAD"]):
+            h.update(subprocess.run(argv, cwd=working_dir, capture_output=True, timeout=30).stdout)
+        untracked = subprocess.run(["git", "ls-files", "-z", "--others", "--exclude-standard"], cwd=working_dir,
+                                   capture_output=True, timeout=30).stdout.split(b"\0")
     except (OSError, subprocess.SubprocessError):
         return ""
-    return hashlib.sha256((head + diff).encode()).hexdigest()
+    for rel in filter(None, untracked):
+        h.update(rel)
+        try:
+            h.update(hashlib.sha256((Path(working_dir) / rel.decode()).read_bytes()).digest())
+        except (OSError, UnicodeDecodeError):
+            h.update(b"<unreadable>")
+    return h.hexdigest()
 
 
 def _args_digest(args: list[str]) -> str:
@@ -77,8 +84,11 @@ class PromptCache:
                 " created REAL, hits INTEGER DEFAULT 0)"
             )
 
-    def _conn(self) -> sqlite3.Connection:
-        return sqlite3.connect(self.path, timeout=10)
+    @contextmanager
+    def _conn(self) -> Iterator[sqlite3.Connection]:
+        """One transaction, and the connection is closed afterwards (sqlite3's own context manager only commits)."""
+        with closing(sqlite3.connect(self.path, timeout=10)) as conn, conn:
+            yield conn
 
     @staticmethod
     def enabled_for(slash_command: str) -> bool:

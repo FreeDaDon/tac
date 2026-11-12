@@ -77,3 +77,9 @@ def test_extract_wrappers():
 def test_no_high_findings_threshold(fixtures):
     report = analyze_file(fixtures / "iam" / "policies" / "least_privilege.json")
     assert all(SEVERITY_ORDER[f.severity] < SEVERITY_ORDER["high"] for f in report.findings)
+
+
+def test_yaml_policy_documents_are_analyzed(tmp_path):
+    policy = tmp_path / "policy.yaml"
+    policy.write_text("Version: '2012-10-17'\nStatement:\n  Effect: Allow\n  Action: '*'\n  Resource: '*'\n")
+    assert [f.rule_id for f in analyze_file(policy).findings] == ["IAM001"]

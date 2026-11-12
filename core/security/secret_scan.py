@@ -49,10 +49,12 @@ RULES: tuple[SecretRule, ...] = (
                re.compile(r"(-----BEGIN (?:RSA |EC |DSA |OPENSSH |PGP |ENCRYPTED )?PRIVATE KEY(?: BLOCK)?-----)"), 1),
 )
 GENERIC_RULE_ID = "SECRET-GENERIC-HIGH-ENTROPY"
-_GENERIC_ASSIGNMENT = re.compile(
-    r"(?i)\b([A-Za-z0-9_.\-]*(?:secret|token|passwd|password|api[_\-]?key|access[_\-]?key|private[_\-]?key|credential)"
-    r"[A-Za-z0-9_.\-]*)[\"']?\s*[:=]\s*[\"']([A-Za-z0-9+/=_\-.~]{16,})[\"']"
-)
+_SECRET_KEY = re.compile(
+    r"(?i)secret|token|passwd|password|api[_\-]?key|access[_\-]?key|private[_\-]?key|credential")
+# The key is a whole identifier token (lookbehind + possessive run), so matching stays linear on any input.
+_KEY = r"(?<![A-Za-z0-9_.\-])([A-Za-z0-9_.\-]{1,128}+)[\"']?\s*+[:=]\s*+"
+_GENERIC_ASSIGNMENT = re.compile(_KEY + r"[\"']([A-Za-z0-9+/=_\-.~]{16,}+)[\"']")
+_UNQUOTED_ASSIGNMENT = re.compile(_KEY + r"([^\s\"'`,;]{8,}+)")
 _PLACEHOLDER = re.compile(r"(?i)(example|placeholder|changeme|your[_\-]|xxxx|dummy|\$\{|<)")
 
 
@@ -75,9 +77,16 @@ class SecretMatch:
 class Allowlist:
     path_globs: tuple[str, ...] = ()
     fingerprints: frozenset[str] = frozenset()
+    ignored_globs: tuple[str, ...] = ()
+
+    def reason(self, rel_path: str, fp: str) -> str | None:
+        """Why a match is suppressed ("fingerprint" or "glob"), or None when it is not."""
+        if fp in self.fingerprints:
+            return "fingerprint"
+        return "glob" if any(fnmatch.fnmatch(rel_path, g) for g in self.path_globs) else None
 
     def allows(self, rel_path: str, fp: str) -> bool:
-        return fp in self.fingerprints or any(fnmatch.fnmatch(rel_path, g) for g in self.path_globs)
+        return self.reason(rel_path, fp) is not None
 
 
 def shannon_entropy(value: str) -> float:
@@ -106,14 +115,20 @@ def redact_secrets(text: str) -> str:
         text = rule.pattern.sub(repl, text)
 
     def redact_generic(m: re.Match[str]) -> str:
-        return m.group(0) if _PLACEHOLDER.search(m.group(2)) else m.group(0).replace(m.group(2), "[REDACTED:GENERIC]")
+        if not _SECRET_KEY.search(m.group(1)) or _PLACEHOLDER.search(m.group(2)) or "[REDACTED:" in m.group(2):
+            return m.group(0)
+        if m.re is _UNQUOTED_ASSIGNMENT and not _mixed_charset(m.group(2)):
+            return m.group(0)
+        return m.group(0).replace(m.group(2), "[REDACTED:GENERIC]")
 
-    return _GENERIC_ASSIGNMENT.sub(redact_generic, text)
+    return _UNQUOTED_ASSIGNMENT.sub(redact_generic, _GENERIC_ASSIGNMENT.sub(redact_generic, text))
 
 
 def parse_allowlist(text: str) -> Allowlist:
-    """Lines are path globs (relative to the allowlist's directory) or `fingerprint:<hex16>`; `#` comments."""
+    """Lines are path globs (relative to the allowlist's directory) or `fingerprint:<hex16>`; `#` comments.
+    A glob made only of wildcards (`*`, `**/*`) would silence the whole scan, so it is ignored and reported."""
     globs: list[str] = []
+    ignored: list[str] = []
     fps: set[str] = set()
     for raw in text.splitlines():
         line = raw.split("#", 1)[0].strip()
@@ -121,18 +136,18 @@ def parse_allowlist(text: str) -> Allowlist:
             continue
         if line.startswith("fingerprint:"):
             fps.add(line.removeprefix("fingerprint:").strip().lower())
+        elif re.fullmatch(r"[*?/.]*", line):
+            ignored.append(line)
         else:
             globs.append(line.rstrip("/"))
-    return Allowlist(tuple(globs), frozenset(fps))
+    return Allowlist(tuple(globs), frozenset(fps), tuple(ignored))
 
 
-def find_allowlist(start: Path) -> Path | None:
-    """Nearest `.secretsallow` in `start` or any ancestor."""
-    for directory in (start, *start.parents):
-        candidate = directory / ALLOWLIST_FILENAME
-        if candidate.is_file():
-            return candidate
-    return None
+def find_allowlist(scan_root: Path) -> Path | None:
+    """The `.secretsallow` at the scan root itself. Ancestors are not searched: a file found by walking up from an
+    agent-controlled input is not trusted. Pass `allowlist=` explicitly to use one from a trusted location."""
+    candidate = scan_root / ALLOWLIST_FILENAME
+    return candidate if candidate.is_file() and not candidate.is_symlink() else None
 
 
 def scan_text(text: str, path: str = "", entropy_threshold: float = DEFAULT_ENTROPY_THRESHOLD) -> list[SecretMatch]:
@@ -148,7 +163,8 @@ def scan_text(text: str, path: str = "", entropy_threshold: float = DEFAULT_ENTR
         for m in _GENERIC_ASSIGNMENT.finditer(line):
             secret = m.group(2)
             start, end = m.span(2)
-            if any(s < end and start < e for s, e in matched_spans) or _PLACEHOLDER.search(secret):
+            if not _SECRET_KEY.search(m.group(1)) or any(s < end and start < e for s, e in matched_spans) \
+                    or _PLACEHOLDER.search(secret):
                 continue
             entropy = shannon_entropy(secret)
             if entropy >= entropy_threshold and _mixed_charset(secret):
@@ -170,7 +186,7 @@ def _is_skipped_dir(rel_parts: tuple[str, ...]) -> bool:
 
 
 def iter_files(root: Path) -> Iterator[Path]:
-    """Deterministically walk `root`, pruning vendored/ephemeral directories."""
+    """Deterministically walk `root`, pruning vendored/ephemeral directories and never following symlinks."""
     if root.is_file():
         yield root
         return
@@ -179,7 +195,8 @@ def iter_files(root: Path) -> Iterator[Path]:
         rel = base.relative_to(root).parts
         dirnames[:] = sorted(d for d in dirnames if not _is_skipped_dir((*rel, d)))
         for name in sorted(filenames):
-            yield base / name
+            if not (base / name).is_symlink():
+                yield base / name
 
 
 def read_text_file(path: Path, max_bytes: int = DEFAULT_MAX_BYTES) -> str | None:
@@ -219,7 +236,8 @@ def scan_paths(
 ) -> tuple[list[Finding], dict[str, int]]:
     """Scan files/directories. Allowlist globs are matched against paths relative to `allowlist_root`."""
     findings: list[Finding] = []
-    stats = {"files_scanned": 0, "files_skipped": 0, "suppressed": 0}
+    stats = {"files_scanned": 0, "files_skipped": 0, "suppressed": 0, "suppressed_by_fingerprint": 0,
+             "suppressed_by_glob": 0}
     for top in paths:
         for file in iter_files(top):
             text = read_text_file(file, max_bytes)
@@ -230,8 +248,10 @@ def scan_paths(
             rel_to_allow = _relative(file, allowlist_root)
             display = _relative(file, top if top.is_dir() else top.parent)
             for match in scan_text(text, display, entropy_threshold):
-                if allowlist and allowlist.allows(rel_to_allow, match.fingerprint):
+                reason = allowlist.reason(rel_to_allow, match.fingerprint) if allowlist else None
+                if reason:
                     stats["suppressed"] += 1
+                    stats[f"suppressed_by_{reason}"] += 1
                     continue
                 findings.append(_to_finding(match, display))
     return findings, stats
@@ -251,14 +271,18 @@ def analyze_file(
     allowlist: Path | str | None = None,
     use_allowlist: bool = True,
     entropy_threshold: float = DEFAULT_ENTROPY_THRESHOLD,
+    allowlist_root: Path | str | None = None,
     **opts: Any,
 ) -> AnalysisReport:
-    """Scan a file or directory. By default the nearest `.secretsallow` (searching upward) is applied."""
+    """Scan a file or directory. By default only a `.secretsallow` at the scan root (the directory, or a file's own
+    directory) is applied; `allowlist=` names a trusted allowlist explicitly. Its globs are relative to its own
+    directory, or to `allowlist_root` (e.g. a worktree judged by the main checkout's allowlist)."""
     path = Path(path)
     allow_file = Path(allowlist) if allowlist else find_allowlist((path if path.is_dir() else path.parent).resolve())
     allow = parse_allowlist(allow_file.read_text(encoding="utf-8")) if (use_allowlist and allow_file) else None
+    glob_root = Path(allowlist_root).resolve() if allowlist_root else (allow_file.parent if allow_file else None)
     findings, stats = scan_paths(
-        [path], allow, allow_file.parent if allow_file else None, float(entropy_threshold),
+        [path], allow, glob_root, float(entropy_threshold),
         int(opts.get("max_bytes", DEFAULT_MAX_BYTES)),
     )
     return AnalysisReport(
@@ -267,7 +291,8 @@ def analyze_file(
         input=str(path),
         findings=findings,
         metrics={**stats, "findings": len(findings),
-                 "allowlist": str(allow_file) if allow is not None and allow_file else None},
+                 "allowlist": str(allow_file) if allow is not None and allow_file else None,
+                 "allowlist_ignored_globs": list(allow.ignored_globs) if allow else []},
         summary=f"{len(findings)} potential secret(s) in {stats['files_scanned']} file(s); "
         f"{stats['suppressed']} suppressed by allowlist",
     )

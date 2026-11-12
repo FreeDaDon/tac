@@ -1,6 +1,11 @@
-# One root, three environments: select with -var-file=envs/<env>.tfvars and keep a separate state per environment.
+# One root, three environments. Each environment is a Terraform workspace with its own state file under
+# state/<env>/, and the workspace guard below refuses a plan whose tfvars do not match the selected workspace.
 terraform {
   required_version = ">= 1.6"
+
+  backend "local" {
+    workspace_dir = "state"
+  }
 }
 
 variable "environment" {
@@ -14,6 +19,17 @@ variable "review_ticket" {
 
 variable "approved_groups" {
   type = list(string)
+}
+
+resource "terraform_data" "workspace_guard" {
+  input = var.environment
+
+  lifecycle {
+    precondition {
+      condition     = terraform.workspace == var.environment
+      error_message = "Workspace \"${terraform.workspace}\" does not match environment \"${var.environment}\". Run: terraform workspace select -or-create ${var.environment}"
+    }
+  }
 }
 
 module "docs_search" {
@@ -36,12 +52,13 @@ module "docs_search" {
     name            = "search_docs"
     description     = "Search the internal documentation index."
     read_only       = true
+    open_world      = false
     required_scopes = ["docs.read"]
-    input_schema = {
+    input_schema = jsonencode({
       type                 = "object"
       additionalProperties = false
       properties           = { query = { type = "string", maxLength = 200 } }
-    }
+    })
   }]
 }
 

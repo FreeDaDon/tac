@@ -117,6 +117,83 @@ PIPE_TO_SHELL = [
 ]
 
 
+NET_CLIENTS = {"curl", "wget", "nc", "ncat", "netcat", "socat", "telnet", "ftp", "scp", "sftp", "ssh", "rsync"}
+LOOPBACK_HOSTS = {"localhost", "127.0.0.1", "[::1]", "::1", "0.0.0.0"}  # noqa: S104 - a host name, not a bind
+HOST_TOKEN = re.compile(
+    r"^(?:[a-z][a-z0-9+.-]*://)?(?:[^@/\s]+@)?"
+    r"(\[[0-9a-f:.]+\]|[a-z0-9-]+(?:\.[a-z0-9-]+)*\.[a-z]{2,}|\d{1,3}(?:\.\d{1,3}){3}|localhost)(?::\d+)?(?:[/:]|$)")
+
+
+COMMAND_PREFIXES = {"env", "nohup", "time", "command", "exec", "xargs", "timeout", "nice", "stdbuf", "sudo", "doas"}
+SHELLS = {"sh", "bash", "zsh", "dash", "ksh"}
+WHOLE_QUOTED = re.compile(r"""(?<![^\s=(|;&])(["'])(.*?)\1(?=$|[\s;|&)])""", re.DOTALL)
+ARG_PLACEHOLDER = re.compile(r"__arg(\d+)__")
+LOCAL_CAPABLE_COPIERS = {"scp", "rsync"}
+REMOTE_COPY_ARG = re.compile(r"^(?:[^@/\s:]+@)?(\[[0-9a-f:.]+\]|[a-z0-9][a-z0-9.-]*)::?(?!//)")
+HEREDOC = re.compile(r"(?P<head>[^\n]*?)<<-?[ \t]*(?P<q>['\"]?)(?P<tag>\w+)(?P=q)(?P<rest>[^\n]*)\n(?P<body>.*?)\n[ \t]*(?P=tag)[ \t]*(?=\n|$)",
+                     re.DOTALL)
+
+
+def _drop_literal_heredocs(command: str, depth: int) -> str:
+    """A quoted heredoc (<<'EOF') fed to a non-shell is literal data, like a quoted argument.
+    A heredoc fed to a shell is a script and is checked; an unquoted one can expand $(...), so it stays."""
+    def replace(m: re.Match[str]) -> str:
+        segs = segments(normalize(m.group("head").lower()))
+        cmd = _command_word(segs[-1])[0] if segs else ""
+        if cmd in SHELLS and depth < 3:
+            check_network(m.group("body"), depth + 1)
+            return m.group("head") + m.group("rest")
+        if m.group("q"):
+            return m.group("head") + m.group("rest")
+        return m.group(0)
+
+    return HEREDOC.sub(replace, command)
+
+
+def _command_word(seg: str) -> tuple[str, list[str]]:
+    toks = words(seg)
+    i = 0
+    while i < len(toks) and (toks[i] in COMMAND_PREFIXES or "=" in toks[i] or toks[i].startswith("-")
+                             or toks[i].isdigit()):
+        i += 1
+    return (toks[i].rsplit("/", 1)[-1], toks[i + 1:]) if i < len(toks) else ("", [])
+
+
+def check_network(command: str, depth: int = 0) -> None:
+    """Network clients may only talk to loopback: agents test the local app, they never fetch or upload.
+
+    A whole quoted argument is data (a grep pattern, a commit message), so it is masked before the
+    command is split, except the script of `bash -c "..."`, which is checked recursively. Quotes
+    inside a word (c"ur"l) are still stripped, so they cannot hide the command name."""
+    inner: list[str] = []
+
+    def mask(m: re.Match[str]) -> str:
+        inner.append(m.group(2))
+        return f" __arg{len(inner) - 1}__ "
+
+    def unmask(arg: str) -> str:
+        m = ARG_PLACEHOLDER.fullmatch(arg)
+        return inner[int(m.group(1))] if m else arg
+
+    masked = normalize(WHOLE_QUOTED.sub(mask, _drop_literal_heredocs(command, depth).lower()))
+    for seg in segments(masked):
+        cmd, args = _command_word(seg)
+        if cmd in SHELLS and "-c" in args and depth < 3:
+            pos = args.index("-c") + 1
+            if pos < len(args):
+                check_network(unmask(args[pos]), depth + 1)
+        if cmd not in NET_CLIENTS:
+            continue
+        plain = [unmask(a).strip() for a in args]
+        if cmd in LOCAL_CAPABLE_COPIERS:
+            plain = [a for a in plain if a.startswith("rsync://") or REMOTE_COPY_ARG.match(a)]
+            if not plain:
+                continue
+        hosts = [m.group(1) for a in plain if (m := HOST_TOKEN.match(a) or REMOTE_COPY_ARG.match(a))]
+        if not hosts or any(h not in LOOPBACK_HOSTS for h in hosts):
+            raise Blocked("network clients may only reach localhost; outbound transfers are not allowed")
+
+
 def check_rm(seg: str) -> None:
     toks = words(seg)
     for i, tok in enumerate(toks):
@@ -189,6 +266,7 @@ def check_bash(command: str) -> None:
             raise Blocked(f"access to secret env file {tok!r} is not allowed (use .env.sample)")
         if is_sensitive_path(tok):
             raise Blocked(f"access to credential path {tok!r} is not allowed")
+    check_network(command)
     for seg in segments(norm):
         check_rm(seg)
         check_find(seg)

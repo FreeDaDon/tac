@@ -13,11 +13,18 @@ from collections.abc import Iterator
 from pathlib import Path
 from typing import Any
 
-from core.common import AnalysisReport, Finding, FindingSeverity
+from core.common import (
+    PUBLIC_CIDRS,
+    SENSITIVE_PORTS,
+    AnalysisReport,
+    Finding,
+    FindingSeverity,
+    exposure_severity,
+    risk_score,
+)
 from core.loaders import load_structured
 
 TOOL = "gcp_tf"
-SEVERITY_WEIGHTS = {"critical": 40, "high": 20, "medium": 8, "low": 3, "info": 0}
 PUBLIC_MEMBERS = frozenset({"allUsers", "allAuthenticatedUsers"})
 PRIMITIVE_ROLES = frozenset({"roles/owner", "roles/editor"})
 ESCALATION_ROLES = frozenset({
@@ -32,11 +39,8 @@ SENSITIVE_DATA_TYPES = ("storage_bucket", "bigquery", "secret_manager", "kms", "
 INVOKER_TYPES = ("cloud_run", "cloudfunctions", "cloudfunctions2")
 IAM_KIND = re.compile(r"^google_(?P<scope>project|organization|folder|billing_account|service_account|[\w]+?)_iam_"
                       r"(?P<kind>member|binding|policy|audit_config)$")
-SENSITIVE_PORTS = {22: "ssh", 3389: "rdp", 3306: "mysql", 5432: "postgres", 1433: "mssql", 6379: "redis",
-                   27017: "mongodb", 9200: "elasticsearch", 9092: "kafka", 2181: "zookeeper", 5601: "kibana"}
 DEFAULT_SA = re.compile(r"-compute@developer\.gserviceaccount\.com$|@appspot\.gserviceaccount\.com$")
 HIGH_SCOPE = "https://www.googleapis.com/auth/cloud-platform"
-PUBLIC_CIDRS = frozenset({"0.0.0.0/0", "::/0"})
 
 
 def looks_like_terraform_json(data: Any) -> bool:
@@ -212,8 +216,7 @@ def check_network(res: dict[str, Any]) -> list[Finding]:
                    "Restrict source_ranges and ports; use IAP TCP forwarding for admin access.", source_ranges=sorted(public))]
     if sensitive:
         names = {p: SENSITIVE_PORTS[p] for p in sorted(sensitive)}
-        admin = bool(sensitive & {22, 3389})
-        return [_f(res, "GCP-NET-FW-OPEN", "critical" if not admin else "high",
+        return [_f(res, "GCP-NET-FW-OPEN", exposure_severity(sensitive),
                    f"Firewall exposes {', '.join(names.values())} to the internet", "network",
                    "Restrict source_ranges; use IAP or a bastion for administrative ports.",
                    source_ranges=sorted(public), ports={str(k): v for k, v in names.items()})]
@@ -261,11 +264,13 @@ def check_gke(res: dict[str, Any]) -> list[Finding]:
     if not _first(v.get("private_cluster_config")).get("enable_private_nodes"):
         out.append(_f(res, "GCP-GKE-PUBLIC-NODES", "medium", "GKE nodes are not private", "gke",
                       "Enable private nodes and restrict the control-plane endpoint."))
-    cidrs = {str(c.get("cidr_block", "")) for c in _first(v.get("master_authorized_networks_config")).get("cidr_blocks") or []
-             if isinstance(c, dict)}
-    if cidrs & PUBLIC_CIDRS:
+    authorized = v.get("master_authorized_networks_config")
+    cidrs = {str(c.get("cidr_block", "")) for c in _first(authorized).get("cidr_blocks") or [] if isinstance(c, dict)}
+    private_endpoint = _first(v.get("private_cluster_config")).get("enable_private_endpoint") is True
+    if cidrs & PUBLIC_CIDRS or not (authorized or private_endpoint):
         out.append(_f(res, "GCP-GKE-MASTER-OPEN", "high", "GKE control plane is reachable from the internet", "gke",
-                      "Restrict master_authorized_networks to corporate ranges.", cidr_blocks=sorted(cidrs & PUBLIC_CIDRS)))
+                      "Restrict master_authorized_networks to corporate ranges.", cidr_blocks=sorted(cidrs & PUBLIC_CIDRS),
+                      authorized_networks_configured=bool(authorized)))
     if not _first(v.get("workload_identity_config")).get("workload_pool"):
         out.append(_f(res, "GCP-GKE-NO-WI", "low", "Workload Identity is not enabled", "gke",
                       "Enable Workload Identity instead of node service-account credentials."))
@@ -313,7 +318,7 @@ def analyze_file(path: Path, **opts: Any) -> AnalysisReport:
     by_type: dict[str, int] = defaultdict(int)
     for r in res_list:
         by_type[str(r.get("type"))] += 1
-    score = min(100, sum(SEVERITY_WEIGHTS[f.severity] for f in findings))
+    score = risk_score(findings)
     return AnalysisReport(
         pack="gcp_sre", tool=TOOL, input=str(path), findings=findings,
         metrics={"source": "state" if "values" in data else "plan", "google_resources": len(res_list),

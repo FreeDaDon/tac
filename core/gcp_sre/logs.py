@@ -11,11 +11,11 @@ import re
 import statistics
 from collections import Counter, defaultdict
 from dataclasses import dataclass, field
-from datetime import datetime
+from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
 
-from core.common import AnalysisReport, Finding, FindingSeverity
+from core.common import AnalysisReport, Finding, FindingSeverity, bump_severity
 from core.gcp_sre import events as ev
 from core.security.sanitize import snippet
 
@@ -26,7 +26,6 @@ DEFAULT_BURST_FACTOR = 3.0
 ERROR_RATE_THRESHOLD = 0.05
 MAX_SAMPLES = 3
 MAX_HOSTS = 5
-_SEV_ORDER: tuple[FindingSeverity, ...] = ("info", "low", "medium", "high", "critical")
 
 
 @dataclass(frozen=True)
@@ -130,10 +129,6 @@ def looks_like_log(path: Path) -> bool:
     return bool(ev._TS_RE.search(head) or ev._LEVEL_RE.search(head))
 
 
-def _bump(severity: FindingSeverity, steps: int) -> FindingSeverity:
-    return _SEV_ORDER[min(len(_SEV_ORDER) - 1, _SEV_ORDER.index(severity) + steps)]
-
-
 @dataclass
 class _Agg:
     count: int = 0
@@ -162,7 +157,7 @@ def _iso(ts: datetime | None) -> str | None:
 def _finding(sig: Signature, agg: _Agg, source: str, total: int) -> Finding:
     steps = 1 if agg.count >= max(20, sig.min_count * 10) and sig.severity in ("medium", "low") else 0
     hosts = [h for h, _ in agg.hosts.most_common(MAX_HOSTS)]
-    return Finding(rule_id=sig.rule_id, title=sig.title, severity=_bump(sig.severity, steps), category=sig.category,
+    return Finding(rule_id=sig.rule_id, title=sig.title, severity=bump_severity(sig.severity, steps), category=sig.category,
                    resource=source, location=f"{source}:{agg.first_line}",
                    evidence={"count": agg.count, "share_of_events": round(agg.count / total, 4) if total else 0,
                              "first_seen": _iso(agg.first), "last_seen": _iso(agg.last), "hosts": hosts,
@@ -193,7 +188,7 @@ def _burst_findings(events: list[ev.Event], source: str, burst_min: int, factor:
     minutes: set[str] = set()
     for e in events:
         if e.ts:
-            minute = e.ts.strftime("%Y-%m-%dT%H:%MZ")
+            minute = e.ts.astimezone(UTC).strftime("%Y-%m-%dT%H:%MZ")
             minutes.add(minute)
             if e.level in ev.ERROR_LEVELS:
                 errors[minute] += 1

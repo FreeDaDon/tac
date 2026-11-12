@@ -30,6 +30,7 @@ _HOST_KEYS = ("host", "hostname", "resource.labels.instance_id", "resource.label
 _SOURCE_KEYS = ("sourcetype", "source", "logName", "resource.type")
 _LEVEL_KEYS = ("level", "severity", "log_level", "loglevel", "log.level")
 SNIFF_KEYS = ("_raw", "_time", "textPayload", "jsonPayload", "protoPayload")
+csv.field_size_limit(MAX_FILE_BYTES)  # Splunk `_raw` fields routinely exceed the 128 KiB default
 
 
 @dataclass
@@ -126,7 +127,11 @@ def load_events(path: Path) -> list[Event]:
     suffix = path.suffix.lower()
     stripped = text.lstrip()
     if suffix == ".csv":
-        return _from_records(list(csv.DictReader(io.StringIO(text))))[:MAX_EVENTS]
+        try:
+            csv_rows = list(csv.DictReader(io.StringIO(text)))
+        except csv.Error as exc:
+            raise ValueError(f"{path}: malformed CSV: {exc}") from exc
+        return _from_records(csv_rows)[:MAX_EVENTS]
     json_ext = suffix in {".json", ".jsonl", ".ndjson"}
     if json_ext or stripped[:1] in "[{":
         try:
